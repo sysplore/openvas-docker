@@ -2,7 +2,7 @@
 set -Eeo pipefail
 
 # Set PostgreSQL version
-PGVER=${PGVER:-13}
+PGVER=${PGVER:-15}
 
 #Define  proper shutdown
 # This is only needed with the postgresql instance

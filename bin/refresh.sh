@@ -4,7 +4,7 @@
 # This should run from a cron with a long enough sleep to make sure
 # the gvmd has updated the DB before creating the archive and pushing
 # to github. It's probably not going to be useful to anyone but me
-# but the output will benefit all. 
+# but the output will benefit all.
 
 # Set start dir
 WorkDir=$(pwd)
@@ -65,7 +65,7 @@ cd $TWD
 echo "First copy the feeds from the container"
 docker cp updater:/data/var-lib .
 echo "Now dump the db from postgres"
-docker exec -i updater su -c "/usr/lib/postgresql/13/bin/pg_dumpall" postgres > ./$SQLBU 
+docker exec -i updater su -c "/usr/lib/postgresql/15/bin/pg_dumpall" postgres > ./$SQLBU
 
 echo "Stopping update container"
 docker stop updater
@@ -76,7 +76,7 @@ docker rm updater
 # Give the data a timestamp
 date > var-lib/update.ts
 echo "Compress and archive the data"
-#Exclude the gnupg dir as this should be unique for each installation. 
+#Exclude the gnupg dir as this should be unique for each installation.
 tar cJf $TAR --exclude=var-lib/gvm/gvmd/gnupg \
 	--exclude=var-lib/gvm/CA \
 	--exclude=var-lib/gvm/private \
@@ -112,7 +112,7 @@ fi
 
 echo "Cleaning up"
 cd $TWD
-if [ $? -eq 0 ]; then 
+if [ $? -eq 0 ]; then
 	rm -rf *
 else
 	echo "What happend to $TWD ???"

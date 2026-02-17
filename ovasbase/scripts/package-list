@@ -26,7 +26,7 @@ libnet1
 libpaho-mqtt1.3
 libpcap0.8
 libpopt0
-libradcli4 
+libradcli4
 libssh-4
 libstdc++6
 libunistring2
@@ -39,8 +39,6 @@ nmap
 nsis
 openssh-client
 postfix
-postgresql-13
-postgresql-client-13
 postgresql-15
 postgresql-client-15
 procps

@@ -8,14 +8,14 @@ services:
       - "RELAYHOST=172.17.0.1"
       - "SMTPPORT=25"
       - "REDISDBS=512" # number of Redis DBs to use
-      - "QUIET=false"  # dump feed sync noise to /dev/null
-      - "NEWDB=false"  # only use this for creating a blank DB 
+      - "QUIET=false" # dump feed sync noise to /dev/null
+      - "NEWDB=false" # only use this for creating a blank DB
       - "SKIPSYNC=true" # Skips the feed sync on startup.
-      - "RESTORE=false"  # This probably not be used from compose... see docs.
-      - "DEBUG=false"  # This will cause the container to stop and not actually start gvmd
-      - "HTTPS=false"  # wether to use HTTPS or not
-      - "GMP=9390"    # to enable see docs
-      - "PGVER=15" # Set postgresql version ... either 13 or 15
+      - "RESTORE=false" # This probably not be used from compose... see docs.
+      - "DEBUG=false" # This will cause the container to stop and not actually start gvmd
+      - "HTTPS=false" # wether to use HTTPS or not
+      - "GMP=9390" # to enable see docs
+      - "PGVER=15" # Set postgresql version (15 only)
     volumes:
       - "openvas:/data"
     container_name: openvas
