@@ -1,10 +1,10 @@
 [![Docker Pulls](https://img.shields.io/docker/pulls/mitexleo/openvas.svg)](https://hub.docker.com/r/mitexleo/openvas/)
 [![Docker Stars](https://img.shields.io/docker/stars/mitexleo/openvas?style=flat)](https://hub.docker.com/r/mitexleo/openvas/)
 [![Docker Stars](https://img.shields.io/docker/image-size/mitexleo/openvas.svg?maxAge=2592000)](https://hub.docker.com/r/mitexleo/openvas/)
-[![GitHub Issues](https://img.shields.io/github/issues-raw/mitexleo/openvas.svg)](https://github.com/mitexleo/openvas/issues)
+[![GitHub Issues](https://img.shields.io/github/issues-raw/mitexleo/openvas.svg)](https://github.com/mitexleo/openvas-docker/issues)
 [![Discord](https://img.shields.io/discord/809911669634498596?label=Discord&logo=discord)](https://discord.gg/DtGpGFf7zV)
 [![Twitter Badge](https://badgen.net/badge/icon/twitter?icon=twitter&label)](https://twitter.com/mitexleo)
-![GitHub Repo stars](https://img.shields.io/github/stars/mitexleo/openvas?style=social)
+![GitHub Repo stars](https://img.shields.io/github/stars/mitexleo/openvas-docker?style=social)
 # A Greenbone Vulnerability Management docker image
 ### Brought to you by ###
 [![mitexleo Cybersecurity](https://github.com/mitexleo/openvas/raw/master/images/ics-hz.png)](https://mitexleo.com "mitexleo Cybersecurity")
