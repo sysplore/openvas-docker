@@ -42,31 +42,100 @@ echo "Setting up soft links"
 if [[ ! -d /data/database/base ]] && \
    ([[ -z "$1" ]] || [[ "$1" == "postgresql" ]] || [[ "$1" == "refresh" ]]); then
 	echo "Database"
-	# Check if PostgreSQL cluster already exists (configuration)
-	if pg_lsclusters | grep -q "^${PGVER}.*main"; then
-		echo "Cluster ${PGVER}/main already exists in configuration."
-		# Check if data directory exists and is not empty
-		if [ -d /var/lib/postgresql/${PGVER}/main ] && [ -n "$(ls -A /var/lib/postgresql/${PGVER}/main/ 2>/dev/null)" ]; then
-			echo "Cluster data directory exists and has files."
-		else
-			echo "Cluster data directory missing or empty. Dropping cluster..."
-			pg_dropcluster ${PGVER} main --stop || true
-			pg_createcluster ${PGVER} main || true
-		fi
-	else
-		# No cluster configuration, create one
-		pg_createcluster ${PGVER} main || true
-	fi
-	# Ensure the data directory exists and has files
-	if [ ! -d /var/lib/postgresql/${PGVER}/main ] || [ -z "$(ls -A /var/lib/postgresql/${PGVER}/main/ 2>/dev/null)" ]; then
-		echo "ERROR: PostgreSQL cluster not properly initialized. Cannot proceed."
+	# Ensure PostgreSQL ${PGVER} is installed and tools available
+	if ! command -v pg_lsclusters >/dev/null 2>&1; then
+		echo "ERROR: PostgreSQL tools not found. Ensure PostgreSQL ${PGVER} is installed."
 		exit 1
 	fi
+
+	# Check for existing cluster configuration
+	if pg_lsclusters | grep -q "^${PGVER}.*main"; then
+		echo "Cluster ${PGVER}/main already exists in configuration."
+		# If data directory exists and has files, we can keep it
+		if [ -d /var/lib/postgresql/${PGVER}/main ] && [ -n "$(ls -A /var/lib/postgresql/${PGVER}/main/ 2>/dev/null)" ]; then
+			echo "Cluster data directory exists and has files."
+		    else
+		        echo "Cluster data directory missing or empty. Dropping stale cluster configuration..."
+		        # Try to drop cluster, ignoring errors if it's already gone
+		        pg_dropcluster ${PGVER} main --stop 2>/dev/null || true
+		        sleep 2
+		        # Double-check it's gone
+		        if pg_lsclusters | grep -q "^${PGVER}.*main"; then
+		            echo "WARNING: Cluster still exists after drop attempt. Forcing removal..."
+		            pg_dropcluster ${PGVER} main 2>/dev/null || true
+		            # If still present, manually remove cluster configuration
+		            sleep 1
+		            if pg_lsclusters | grep -q "^${PGVER}.*main"; then
+		                echo "Manually removing PostgreSQL cluster configuration files..."
+		                # Remove configuration directory
+		                rm -rf /etc/postgresql/${PGVER}/main 2>/dev/null || true
+		                # Remove data directory if it exists (might be empty or broken symlink)
+		                rm -rf /var/lib/postgresql/${PGVER}/main 2>/dev/null || true
+		                # Clean up any remaining cluster registration
+		                echo "Cluster configuration manually cleaned up."
+		            fi
+		        fi
+		fi
+	fi
+
+	# Create a new cluster if none exists
+	if ! pg_lsclusters | grep -q "^${PGVER}.*main"; then
+		echo "Creating new PostgreSQL cluster ${PGVER}/main..."
+		if ! pg_createcluster ${PGVER} main; then
+			echo "WARNING: pg_createcluster failed, trying manual initdb..."
+			# Fallback to manual initdb
+			if [ ! -d /var/lib/postgresql/${PGVER}/main ]; then
+				mkdir -p /var/lib/postgresql/${PGVER}/main
+				chown postgres:postgres /var/lib/postgresql/${PGVER}/main
+			fi
+			# Use initdb directly as postgres user
+			if su -c "/usr/lib/postgresql/${PGVER}/bin/initdb -D /var/lib/postgresql/${PGVER}/main --encoding=UTF8 --locale=C.UTF-8" postgres; then
+				echo "Manual initdb succeeded."
+				# Create minimal cluster configuration
+				mkdir -p /etc/postgresql/${PGVER}/main
+				# Write basic postgresql.conf
+				echo "# PostgreSQL configuration created by initdb fallback" > /etc/postgresql/${PGVER}/main/postgresql.conf
+				echo "data_directory = '/var/lib/postgresql/${PGVER}/main'" >> /etc/postgresql/${PGVER}/main/postgresql.conf
+				echo "hba_file = '/etc/postgresql/${PGVER}/main/pg_hba.conf'" >> /etc/postgresql/${PGVER}/main/postgresql.conf
+				echo "ident_file = '/etc/postgresql/${PGVER}/main/pg_ident.conf'" >> /etc/postgresql/${PGVER}/main/postgresql.conf
+				# Create minimal pg_hba.conf
+				echo "local all all trust" > /etc/postgresql/${PGVER}/main/pg_hba.conf
+				echo "host all all 127.0.0.1/32 trust" >> /etc/postgresql/${PGVER}/main/pg_hba.conf
+				echo "host all all ::1/128 trust" >> /etc/postgresql/${PGVER}/main/pg_hba.conf
+				chown -R postgres:postgres /etc/postgresql/${PGVER}/main
+			else
+				echo "ERROR: Both pg_createcluster and manual initdb failed."
+				echo "Make sure PostgreSQL ${PGVER} is properly installed."
+				exit 1
+			fi
+		else
+			echo "Cluster created successfully via pg_createcluster."
+		fi
+	fi
+
+	# Verify the cluster data directory exists and has content
+	if [ ! -d /var/lib/postgresql/${PGVER}/main ]; then
+		echo "ERROR: PostgreSQL data directory /var/lib/postgresql/${PGVER}/main not found."
+		exit 1
+	fi
+
+	if [ -z "$(ls -A /var/lib/postgresql/${PGVER}/main/ 2>/dev/null)" ]; then
+		echo "ERROR: PostgreSQL data directory is empty. Cluster initialization failed."
+		exit 1
+	fi
+
+	echo "Moving PostgreSQL data to persistent storage at /data/database..."
+	# Clear target directory (should already be empty from mkdir -p)
+	rm -rf /data/database/* 2>/dev/null || true
+	# Move all files from the initialized cluster
 	mv /var/lib/postgresql/${PGVER}/main/* /data/database/
-	rm -rf /var/lib/postgresql/${PGVER}/main
+	# Remove the now-empty directory
+	rmdir /var/lib/postgresql/${PGVER}/main
+	# Create symlink from PostgreSQL's expected location to persistent storage
 	ln -s /data/database /var/lib/postgresql/${PGVER}/main
-	chown postgres /data/database
+	chown postgres:postgres /data/database
 	chmod 0700 /data/database
+	echo "PostgreSQL data moved and symlink created successfully."
 else
 	echo "/data/database/base already exists ..."
 	echo " NOT moving data from image to /data"
