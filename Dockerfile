@@ -1,10 +1,10 @@
 # Environment variables for all
 
-# Stage 0: 
+# Stage 0:
 # Start with ovasbase with running dependancies installed.
 FROM mitexleo/ovasbase:latest AS builder
 
-# Ensure apt doesn't ask any questions 
+# Ensure apt doesn't ask any questions
 ENV DEBIAN_FRONTEND=noninteractive
 ENV LANG=C.UTF-8
 ARG TAG
@@ -36,24 +36,26 @@ COPY build.d/gsad.sh /build.d
 RUN bash /build.d/gsad.sh
 # Stage 1: Start again with the ovasbase. Dependancies already installed
 # This target is for the image with no database
-# Makes rebuilds for data refresh and scripting changes faster. 
+# Makes rebuilds for data refresh and scripting changes faster.
 FROM mitexleo/ovasbase:latest AS slim
-LABEL maintainer="scott@mitexleo.com" \
-      version="$VER-slim" \
-      url="https://hub.docker.com/r/mitexleo/openvas" \
-      source="https://github.com/mitexleo/openvas"     
+ARG TAG
+ENV VER="$TAG"
+LABEL maintainer="contact@mitexleo.one" \
+    version="$VER-slim" \
+    url="https://hub.docker.com/r/mitexleo/openvas" \
+    source="https://github.com/mitexleo/openvas"
 EXPOSE 9392
 ENV LANG=C.UTF-8
 # Copy the just built from stage 0
 COPY --from=0 artifacts/ /
 
-# The python bits. 
-# these need to be rolled into a single layer that removes any excess bits. 
+# The python bits.
+# these need to be rolled into a single layer that removes any excess bits.
 # create a single script that installs all the python stuffs and then deletes all the source.
 # the gain for this will be minimal in size but will reduce layer count.
 COPY build.rc ver.current /
 RUN mkdir -p /build
-COPY build.d/ospd-openvas.sh /build.d/. 
+COPY build.d/ospd-openvas.sh /build.d/.
 RUN bash /build.d/ospd-openvas.sh
 COPY build.d/gvm-tool.sh /build.d/
 RUN bash /build.d/gvm-tool.sh
@@ -66,7 +68,7 @@ RUN bash /build.d/links.sh
 # This needs consolidation
 COPY confs/ /
 COPY build.d/links.sh /
-RUN bash /links.sh 
+RUN bash /links.sh
 COPY build.d/gpg-keys.sh /
 RUN bash /gpg-keys.sh
 # Copy in the prebuilt gsa react code.
@@ -76,32 +78,34 @@ COPY branding/ /branding/
 RUN bash /branding/branding.sh
 COPY scripts/ /scripts/
 COPY ver.current /
-#RUN apt update && apt install libcap2-bin net-tools -y 
+#RUN apt update && apt install libcap2-bin net-tools -y
 # allow openvas to access raw sockets and all kind of network related tasks
 #RUN setcap cap_net_raw,cap_net_admin+eip /usr/local/sbin/openvas
 # allow nmap to send e.g. UDP or TCP SYN probes without root permissions
 #ENV NMAP_PRIVILEGED=1
 #RUN setcap cap_net_raw,cap_net_admin,cap_net_bind_service+eip /usr/bin/nmap
 
-# Healthcheck needs be an on image script that will know what service is running and check it. 
+# Healthcheck needs be an on image script that will know what service is running and check it.
 # Current image function stored in /usr/local/etc/running-as
 HEALTHCHECK --interval=300s --start-period=300s --timeout=120s \
-  CMD /scripts/healthcheck.sh || exit 1
+    CMD /scripts/healthcheck.sh || exit 1
 ENTRYPOINT [ "/scripts/start.sh" ]
 
 FROM slim AS final
-LABEL maintainer="scott@mitexleo.com" \
-      version="$VER-full" \
-      url="https://hub.docker.com/r/mitexleo/openvas" \
-      source="https://github.com/mitexleo/openvas"
+ARG TAG
+ENV VER="$TAG"
+LABEL maintainer="contact@mitexleo.one" \
+    version="$VER-full" \
+    url="https://hub.docker.com/r/mitexleo/openvas" \
+    source="https://github.com/mitexleo/openvas"
 
 COPY globals.sql.xz /usr/lib/globals.sql.xz
 COPY gvmd.sql.xz /usr/lib/gvmd.sql.xz
 COPY var-lib.tar.xz /usr/lib/var-lib.tar.xz
 COPY scripts/* /scripts/
 
-# Healthcheck needs be an on image script that will know what service is running and check it. 
+# Healthcheck needs be an on image script that will know what service is running and check it.
 # Current image function stored in /usr/local/etc/running-as
 HEALTHCHECK --interval=300s --start-period=300s --timeout=120s \
-  CMD /scripts/healthcheck.sh || exit 1
+    CMD /scripts/healthcheck.sh || exit 1
 ENTRYPOINT [ "/scripts/start.sh" ]
