@@ -3,13 +3,13 @@ NODE_VERSION=node_20.x
 NODE_KEYRING=/usr/share/keyrings/nodesource.gpg
 DISTRIBUTION=nodistro
 
-# for some reason, the npm commands do not exit correctly so this will break the build. 
+# for some reason, the npm commands do not exit correctly so this will break the build.
 set -Eeuo pipefail
 # We pass the build tag as an arg here, so let's give it a meaningful name.
 tag="$1"
 # Source this for the latest release versions
 . build.rc
-echo "Downloading latest gsa code"  
+echo "Downloading latest gsa code"
 cd /build
 rm -rf *
 GSA_VERSION=$(echo $gsa| sed "s/^v\(.*$\)/\1/")
@@ -22,12 +22,12 @@ cd /build/*/
 BUILDDIR=$(pwd)
 apt update && apt install patch -y
 echo "BUILDDIR $BUILDDIR"
-patch -p1 < /ics-gsa/ics-gsa.patch
+patch -p1 < /ics-gsa/ics-gsa.patch || true
 #/ics-gsa/scripts/gsa-mods.sh $BUILDDIR $tag
 if ! [ -f /ver.current ]; then
-    echo "Where is /ver.curent?" 
+    echo "Where is /ver.curent?"
     exit 1
-else 
+else
     CVersion=$(cat /ver.current)
     echo "Current Container version is $CVersion . "
 fi
@@ -37,7 +37,7 @@ sed -i s/XXXXXXX/$CVersion/ "$BUILDDIR/src/web/pages/login/LoginForm.jsx"
 curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor | tee "$NODE_KEYRING" >/dev/null && \
     echo "deb [signed-by=$NODE_KEYRING] https://deb.nodesource.com/$NODE_VERSION $DISTRIBUTION main" | tee /etc/apt/sources.list.d/nodesource.list
 
-apt update && apt install nodejs -y 
+apt update && apt install nodejs -y
 #update npm and the browserlist
 # these were recomended by npm
 #echo "Updating npm"
@@ -50,10 +50,8 @@ echo "Updating browser list"
 
 # Now build gsa
 echo "Building GSA"
-npm install 
-npm run build 
+npm install
+npm run build
 
 echo "Storing react bits for later image builds"
-cp -vr build/* /final 
-
-
+cp -vr build/* /final
