@@ -470,9 +470,9 @@ service postfix start
 
 
 # wait for ospd to start by looking for the socket creation.
-#while  [ ! -S /var/run/ospd/ospd-openvas.sock]; do
-	#sleep 1
-#done
+while [ ! -S /var/run/ospd/ospd.sock ] || [ ! -S /var/run/ospd/ospd-openvas.sock ]; do
+	sleep 1
+done
 
 # We run ospd-openvas in the container as root. This way we don't need sudo.
 # But if we leave the socket owned by root, gvmd can not communicate with it.

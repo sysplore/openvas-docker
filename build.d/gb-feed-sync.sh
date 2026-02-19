@@ -4,4 +4,5 @@ set -Eeuo pipefail
 . build.rc
 
 echo "pip install of new greenbone-feed-sync"
-python3 -m pip install --break-system-packages greenbone-feed-sync 
+python3 -m pip install "redis==3.5.3" --break-system-packages
+python3 -m pip install --break-system-packages greenbone-feed-sync

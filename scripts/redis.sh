@@ -4,7 +4,7 @@ set -Eeuo pipefail
 REDISDBS=${REDISDBS:-512}
 
 # Fire up redis
-redis-server --unixsocket /run/redis/redis.sock --unixsocketperm 700 \
+redis-server --unixsocket /run/redis/redis.sock --unixsocketperm 777 \
              --timeout 0 --databases $REDISDBS --maxclients 4096 --daemonize yes \
              --port 6379 --bind 127.0.0.1 --loglevel warning --logfile /data/var-log/gvm/redis-server.log
 

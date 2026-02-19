@@ -3,7 +3,7 @@ set -Eeuo pipefail
 # Source this for the latest release versions
 . build.rc
 
-echo "Building OSPd-openvas"   
+echo "Building OSPd-openvas"
 cd /build
 wget --no-verbose https://github.com/greenbone/ospd-openvas/archive/$ospd_openvas.tar.gz
 tar -zxf $ospd_openvas.tar.gz
@@ -11,10 +11,11 @@ cd /build/*/
 echo " Find"
 find . -name setup.py
 echo " Found ?"
-pwd 
+pwd
 
 
 
+python3 -m pip install "redis==3.5.3" --break-system-packages
 python3 -m pip install --break-system-packages .
 
 cd /build
