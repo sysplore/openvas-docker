@@ -486,9 +486,24 @@ if [ $SKIPGSAD == "false" ]; then
 		su -c "gsad --mlisten 127.0.0.1 -m 9390 --verbose --timeout=$GSATIMEOUT \
 				--gnutls-priorities=SECURE128:+SECURE192:-VERS-TLS-ALL:+VERS-TLS1.2 \
 				--no-redirect \
-				--port=9392 $GSAD_ARGS" gvm
+				--listen=0.0.0.0 --port=9392 $GSAD_ARGS" gvm &
 	else
-		su -c "gsad --mlisten 127.0.0.1 -m 9390 --verbose --timeout=$GSATIMEOUT --http-only --no-redirect --port=9392 $GSAD_ARGS" gvm
+		su -c "gsad --mlisten 127.0.0.1 -m 9390 --verbose --timeout=$GSATIMEOUT --http-only --no-redirect --listen=0.0.0.0 --port=9392 $GSAD_ARGS" gvm &
+	fi
+	# Wait for GSAD to be ready
+	echo "Waiting for GSAD to start..."
+	sleep 3
+	timeout=30
+	while [ $timeout -gt 0 ]; do
+		if curl -f http://localhost:9392/ >/dev/null 2>&1 || curl -kf https://localhost:9392/ >/dev/null 2>&1; then
+			echo "GSAD is ready"
+			break
+		fi
+		sleep 1
+		timeout=$((timeout - 1))
+	done
+	if [ $timeout -eq 0 ]; then
+		echo "Warning: GSAD may not have started properly"
 	fi
 else
 	echo "Skipping GSAD start because SKIPGSAD=$SKIPGSAD"
