@@ -141,18 +141,20 @@ if ! [ -f /data/var-lib/gvm/private/CA/cakey.pem ]; then
     	su -c "gvm-manage-certs -afv" gvm
 fi
 # if there is no existing DB, and there is no base db archive, then we need to create a new DB.
-if [ $(DBCheck) -eq 0 ] && ! [ -f /usr/lib/gvmd.sql.xz ]; then
+if [ $(DBCheck) -eq 0 ] && ( ! [ -f /usr/lib/gvmd.sql.xz ] || [ $(stat -c%s /usr/lib/gvmd.sql.xz 2>/dev/null || echo 0) -lt 100 ] ); then
 		echo "Looks like we need to create an empty databse."
 		CREATE_EMPTY_DATABASE="true"
-		# Set SKIPSYNC to false so we pull new feeds
-		SKIPSYNC="false"
-		# Set LOADDEFAULT to false because we don't have the DB.
+		    # Set SKIPSYNC to false so we pull new feeds (unless user explicitly set it to true)
+		    if [ "$SKIPSYNC" != "true" ]; then
+		        SKIPSYNC="false"
+		    fi
+		    # Set LOADDEFAULT to false because we don't have the DB.
 		LOADDEFAULT="false"
 fi
 echo -e "CREATE_EMPTY_DATABASE=$CREATE_EMPTY_DATABASE\nLOADDEFAULT=$LOADDEFAULT"
 
 # Here we load the DB from the image, but only if there is a DB file on the image.
-if [ $LOADDEFAULT = "true" ] && [ $CREATE_EMPTY_DATABASE = "false" ] ; then
+if [ $LOADDEFAULT = "true" ] && [ $CREATE_EMPTY_DATABASE = "false" ] && [ $(stat -c%s /usr/lib/gvmd.sql.xz 2>/dev/null || echo 0) -ge 100 ] ; then
 	echo "########################################"
 	echo "Creating a base DB from /usr/lib/base-db.xz"
 	echo "########################################"
@@ -258,7 +260,11 @@ fi
 # the psql command to fail and crash the container.
 if [ "$CREATE_EMPTY_DATABASE" == "false" ] && ! [ -f /data/feed-syncing ]; then
 	echo "Checking DB Version"
-	DB=$(su -c "psql -tq --username=postgres --dbname=gvmd --command=\"select value from meta where name like 'database_version';\"" postgres)
+	DB=$(su -c "psql -tq --username=postgres --dbname=gvmd --command=\"select value from meta where name like 'database_version';\"" postgres 2>/dev/null || echo "0")
+	# If query returns empty or fails, default to 0
+	if [ -z "$DB" ]; then
+		DB=0
+	fi
 else
 	DB=250
 fi
