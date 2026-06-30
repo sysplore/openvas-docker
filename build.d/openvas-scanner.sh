@@ -85,7 +85,6 @@ echo "#####################################################"
 echo "#####################################################"
 find / -name openvasd
 find / -name scannerctl
-find / -name redis-openvas.conf
 echo "#####################################################"
 echo "#####################################################"
 echo "#####################################################"
@@ -96,7 +95,5 @@ fi
 if [ -f ./target/release/scannerctl ]; then
     cp -v ./target/release/scannerctl $INSTALL_ROOT/bin/
 fi
-mkdir -p ${INSTALL_ROOT}etc/redis/
-cp -v ../config/redis-openvas.conf $INSTALL_ROOT/etc/redis/
 cd /build
 rm -rf *
