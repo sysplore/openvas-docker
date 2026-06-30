@@ -22,7 +22,7 @@ cd build
 
 cmake -DCMAKE_BUILD_TYPE=Release ..
 #cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS="-g3" -DCMAKE_CXX_FLAGS="-g3" ..
-make #-j$(nproc)
+make -j2
 make install
 # install rust to build openvasd and scannerctl
 cd ..
@@ -38,6 +38,9 @@ if [ -f /rust/crates.tar ]; then
     echo "Using pre-fetched crate cache"
     tar xvf /rust/crates.tar
 fi
+
+# Limit parallelism to avoid OOM during Rust compilation
+export CARGO_BUILD_JOBS=2
 
 # Build openvasd
 cd src/openvasd
