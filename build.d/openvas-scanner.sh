@@ -69,9 +69,14 @@ fi
 
 # Copy redis config (always needed)
 mkdir -p ${INSTALL_ROOT}etc/redis/
-REDIS_CONF=$(find /build -name redis-openvas.conf -print -quit 2>/dev/null || true)
+# Find and copy redis config (from openvas-scanner source or any location)
+REDIS_CONF=$(find /build -maxdepth 3 -name redis-openvas.conf -print -quit 2>/dev/null || true)
 if [ -n "$REDIS_CONF" ]; then
+    echo "Found redis config at: $REDIS_CONF"
     cp -v "$REDIS_CONF" ${INSTALL_ROOT}etc/redis/
+else
+    echo "WARNING: redis-openvas.conf not found, creating minimal config"
+    echo "unixsocket /run/redis/redis.sock" > ${INSTALL_ROOT}etc/redis/redis-openvas.conf
 fi
 
 cd ../..
