@@ -94,22 +94,23 @@ if ! [ -f "${BUILD_CACHE}/libgssapi_krb5.a" ]; then
     rm -rf /tmp/krb5*
 fi
 
-# 3. Copy krb5 static libs to build-cache
-cp -v /opt/krb5-static/lib/libgssapi_krb5.a "${BUILD_CACHE}/libgssapi_krb5.a"
-cp -v /opt/krb5-static/lib/libkrb5.a "${BUILD_CACHE}/libkrb5.a"
-cp -v /opt/krb5-static/lib/libk5crypto.a "${BUILD_CACHE}/libk5crypto.a"
-cp -v /opt/krb5-static/lib/libcom_err.a "${BUILD_CACHE}/libcom_err.a"
-cp -v /opt/krb5-static/lib/libkrb5support.a "${BUILD_CACHE}/libkrb5support.a"
+# 3. Copy krb5 static libs to build-cache (DESTDIR + prefix = /artifacts/opt/krb5-static/)
+KRB5_STATIC="/artifacts/opt/krb5-static"
+cp -v "${KRB5_STATIC}/lib/libgssapi_krb5.a" "${BUILD_CACHE}/libgssapi_krb5.a"
+cp -v "${KRB5_STATIC}/lib/libkrb5.a" "${BUILD_CACHE}/libkrb5.a"
+cp -v "${KRB5_STATIC}/lib/libk5crypto.a" "${BUILD_CACHE}/libk5crypto.a"
+cp -v "${KRB5_STATIC}/lib/libcom_err.a" "${BUILD_CACHE}/libcom_err.a"
+cp -v "${KRB5_STATIC}/lib/libkrb5support.a" "${BUILD_CACHE}/libkrb5support.a"
 
 # 4. Copy krb5 headers
-cp -v /opt/krb5-static/include/krb5.h "${BUILD_CACHE}/include/krb5.h"
-cp -v /opt/krb5-static/include/com_err.h "${BUILD_CACHE}/include/com_err.h"
-cp -v /opt/krb5-static/include/profile.h "${BUILD_CACHE}/include/profile.h"
-cp -v /opt/krb5-static/include/gssapi/gssapi.h "${BUILD_CACHE}/include/gssapi/gssapi.h"
-cp -v /opt/krb5-static/include/gssapi/gssapi_krb5.h "${BUILD_CACHE}/include/gssapi/gssapi_krb5.h"
-cp -v /opt/krb5-static/include/gssapi/gssapi_alloc.h "${BUILD_CACHE}/include/gssapi/gssapi_alloc.h" 2>/dev/null || true
-cp -v /opt/krb5-static/include/gssapi/gssapi_ext.h "${BUILD_CACHE}/include/gssapi/gssapi_ext.h" 2>/dev/null || true
-cp -v /opt/krb5-static/include/gssapi/gssapi_generic.h "${BUILD_CACHE}/include/gssapi/gssapi_generic.h" 2>/dev/null || true
+cp -v "${KRB5_STATIC}/include/krb5.h" "${BUILD_CACHE}/include/krb5.h"
+cp -v "${KRB5_STATIC}/include/com_err.h" "${BUILD_CACHE}/include/com_err.h"
+cp -v "${KRB5_STATIC}/include/profile.h" "${BUILD_CACHE}/include/profile.h"
+cp -v "${KRB5_STATIC}/include/gssapi/gssapi.h" "${BUILD_CACHE}/include/gssapi/gssapi.h"
+cp -v "${KRB5_STATIC}/include/gssapi/gssapi_krb5.h" "${BUILD_CACHE}/include/gssapi/gssapi_krb5.h"
+cp -v "${KRB5_STATIC}/include/gssapi/gssapi_alloc.h" "${BUILD_CACHE}/include/gssapi/gssapi_alloc.h" 2>/dev/null || true
+cp -v "${KRB5_STATIC}/include/gssapi/gssapi_ext.h" "${BUILD_CACHE}/include/gssapi/gssapi_ext.h" 2>/dev/null || true
+cp -v "${KRB5_STATIC}/include/gssapi/gssapi_generic.h" "${BUILD_CACHE}/include/gssapi/gssapi_generic.h" 2>/dev/null || true
 
 # 5. Use system libpcap.a (Debian's libpcap-dev provides it)
 cp -v /usr/lib/${DEB_HOST_MULTIARCH}/libpcap.a "${BUILD_CACHE}/libpcap.a" 2>/dev/null || \
