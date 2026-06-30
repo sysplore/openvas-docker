@@ -116,6 +116,7 @@ cp -v "${KRB5_STATIC}/include/gssapi/gssapi_generic.h" "${BUILD_CACHE}/include/g
 LIBPCAP_VERSION=1.10.3
 if ! [ -f "${BUILD_CACHE}/libpcap.a" ]; then
     echo "Building libpcap ${LIBPCAP_VERSION} from source..."
+    apt install -y flex bison 2>/dev/null || true
     cd /tmp
     curl -sL "https://www.tcpdump.org/release/libpcap-${LIBPCAP_VERSION}.tar.gz" -o "libpcap-${LIBPCAP_VERSION}.tar.gz"
     tar xzf "libpcap-${LIBPCAP_VERSION}.tar.gz"
