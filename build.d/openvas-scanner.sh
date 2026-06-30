@@ -39,54 +39,97 @@ cd rust
 export CARGO_BUILD_JOBS=2
 
 # Set up build-cache for native Rust crates (libcrypt-sys, libopenvas-krb5-sys)
-# These expect static archives + headers in crates/nasl-c-lib/build-cache/archives/
+# Following the upstream approach from .docker/prod.Dockerfile:
+# 1. Build MIT Kerberos from source for static libs (Debian packages don't ship .a files)
+# 2. Use system packages for libgcrypt, libgpg-error static libs
 SCANNER_RUST_DIR=$(pwd)
 BUILD_CACHE="${SCANNER_RUST_DIR}/crates/nasl-c-lib/build-cache/archives"
-echo "Setting up build-cache for native Rust crates from system packages..."
+echo "Setting up build-cache for native Rust crates..."
 mkdir -p "${BUILD_CACHE}/include"
-
-# Copy static libraries from system packages
-for lib in libgcrypt.a libgpg-error.a libpcap.a \
-           libgssapi_krb5.a libkrb5.a libk5crypto.a \
-           libcom_err.a libkrb5support.a; do
-    found=$(find /usr -name "$lib" -print -quit 2>/dev/null || true)
-    if [ -n "$found" ]; then
-        cp -v "$found" "${BUILD_CACHE}/"
-    else
-        echo "WARNING: Static library $lib not found."
-    fi
-done
-
-# Copy required headers
-for hdr in gcrypt.h gpg-error.h krb5.h; do
-    found=$(find /usr -name "$hdr" -print -quit 2>/dev/null || true)
-    if [ -n "$found" ]; then
-        cp -v "$found" "${BUILD_CACHE}/include/"
-    else
-        echo "WARNING: Header $hdr not found."
-    fi
-done
-
-# Copy gssapi headers
 mkdir -p "${BUILD_CACHE}/include/gssapi"
-for hdr in gssapi.h gssapi_krb5.h; do
-    found=$(find /usr -name "$hdr" -print -quit 2>/dev/null || true)
-    if [ -n "$found" ]; then
-        cp -v "$found" "${BUILD_CACHE}/include/gssapi/"
-    else
-        echo "WARNING: Header gssapi/$hdr not found."
-    fi
-done
+mkdir -p "${BUILD_CACHE}/include/krb5"
+
+# 1. Install needed dev packages for headers and gcrypt/gpg-error static libs
+#    (libgcrypt20-dev and libgpg-error-dev already installed above)
+DEB_HOST_MULTIARCH="$(gcc -print-multiarch)"
+cp -v "/usr/lib/${DEB_HOST_MULTIARCH}/libgcrypt.a" "${BUILD_CACHE}/libgcrypt.a"
+cp -v "/usr/lib/${DEB_HOST_MULTIARCH}/libgpg-error.a" "${BUILD_CACHE}/libgpg-error.a"
+cp -v /usr/include/gcrypt.h "${BUILD_CACHE}/include/gcrypt.h"
+cp -v "/usr/include/${DEB_HOST_MULTIARCH}/gpg-error.h" "${BUILD_CACHE}/include/gpg-error.h"
+
+# 2. Build MIT Kerberos from source for static libraries
+#    Debian libkrb5-dev doesn't ship .a files for most krb5 libs
+KRB5_VERSION=1.20.1
+KRB5_SRC="/tmp/krb5-${KRB5_VERSION}"
+if ! [ -f "${BUILD_CACHE}/libgssapi_krb5.a" ]; then
+    echo "Building MIT Kerberos ${KRB5_VERSION} from source for static libraries..."
+    apt install -y bison 2>/dev/null || true
+    cd /tmp
+    curl -sL "https://kerberos.org/dist/krb5/${KRB5_VERSION}/krb5-${KRB5_VERSION}.tar.gz" -o "krb5-${KRB5_VERSION}.tar.gz"
+    tar xzf "krb5-${KRB5_VERSION}.tar.gz"
+    cd "krb5-${KRB5_VERSION}/src"
+    ./configure --prefix=/opt/krb5-static \
+        --enable-static \
+        --disable-shared \
+        --without-system-verto \
+        --without-libedit \
+        --disable-rpath \
+        --quiet
+    make -C util/support -j"$(nproc)" --quiet 2>/dev/null || make -C util/support -j2
+    make -C util/et -j"$(nproc)" --quiet 2>/dev/null || make -C util/et -j2
+    make -C util/profile -j"$(nproc)" --quiet 2>/dev/null || make -C util/profile -j2
+    make -C include -j"$(nproc)" --quiet 2>/dev/null || make -C include -j2
+    make -C lib/crypto -j"$(nproc)" --quiet 2>/dev/null || make -C lib/crypto -j2
+    make -C lib/krb5 -j"$(nproc)" --quiet 2>/dev/null || make -C lib/krb5 -j2
+    make -C lib/gssapi -j"$(nproc)" --quiet 2>/dev/null || make -C lib/gssapi -j2
+    make install-mkdirs
+    make -C util/support install
+    make -C util/et install
+    make -C util/profile install
+    make -C include install
+    make -C lib/crypto install
+    make -C lib/krb5 install
+    make -C lib/gssapi install
+    # Clean up source
+    rm -rf /tmp/krb5*
+fi
+
+# 3. Copy krb5 static libs to build-cache
+cp -v /opt/krb5-static/lib/libgssapi_krb5.a "${BUILD_CACHE}/libgssapi_krb5.a"
+cp -v /opt/krb5-static/lib/libkrb5.a "${BUILD_CACHE}/libkrb5.a"
+cp -v /opt/krb5-static/lib/libk5crypto.a "${BUILD_CACHE}/libk5crypto.a"
+cp -v /opt/krb5-static/lib/libcom_err.a "${BUILD_CACHE}/libcom_err.a"
+cp -v /opt/krb5-static/lib/libkrb5support.a "${BUILD_CACHE}/libkrb5support.a"
+
+# 4. Copy krb5 headers
+cp -v /opt/krb5-static/include/krb5.h "${BUILD_CACHE}/include/krb5.h"
+cp -v /opt/krb5-static/include/com_err.h "${BUILD_CACHE}/include/com_err.h"
+cp -v /opt/krb5-static/include/profile.h "${BUILD_CACHE}/include/profile.h"
+cp -v /opt/krb5-static/include/gssapi/gssapi.h "${BUILD_CACHE}/include/gssapi/gssapi.h"
+cp -v /opt/krb5-static/include/gssapi/gssapi_krb5.h "${BUILD_CACHE}/include/gssapi/gssapi_krb5.h"
+cp -v /opt/krb5-static/include/gssapi/gssapi_alloc.h "${BUILD_CACHE}/include/gssapi/gssapi_alloc.h" 2>/dev/null || true
+cp -v /opt/krb5-static/include/gssapi/gssapi_ext.h "${BUILD_CACHE}/include/gssapi/gssapi_ext.h" 2>/dev/null || true
+cp -v /opt/krb5-static/include/gssapi/gssapi_generic.h "${BUILD_CACHE}/include/gssapi/gssapi_generic.h" 2>/dev/null || true
+
+# 5. Use system libpcap.a (Debian's libpcap-dev provides it)
+cp -v /usr/lib/${DEB_HOST_MULTIARCH}/libpcap.a "${BUILD_CACHE}/libpcap.a" 2>/dev/null || \
+    cp -v $(find /usr -name 'libpcap.a' -print -quit) "${BUILD_CACHE}/libpcap.a" 2>/dev/null || \
+    echo "WARNING: libpcap.a not found"
 
 echo "Build-cache contents:"
 ls -la "${BUILD_CACHE}/"
-ls -la "${BUILD_CACHE}/include/" 2>/dev/null || true
+ls -la "${BUILD_CACHE}/include/"
 ls -la "${BUILD_CACHE}/include/gssapi/" 2>/dev/null || true
+
+# Set environment variable so Rust crate build_support.rs finds our archives
+export OPENVAS_ARCHIVES="${BUILD_CACHE}"
+
+# Return to rust directory for cargo build
+cd "${SCANNER_RUST_DIR}"
 
 # Build openvasd - the Rust-based Notus vulnerability detection daemon
 echo "Building openvasd (Rust-based Notus scanner)..."
 cd src/openvasd
-# cargo fetches dependencies from the internet (no --frozen needed)
 cargo build --release -vv
 OPENVASD_EXIT=$?
 if [ $OPENVASD_EXIT -ne 0 ]; then
