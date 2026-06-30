@@ -68,6 +68,8 @@ if ! [ -f "${BUILD_CACHE}/libgssapi_krb5.a" ]; then
     curl -sL "https://web.mit.edu/kerberos/dist/krb5/1.20/krb5-${KRB5_VERSION}.tar.gz" -o "krb5-${KRB5_VERSION}.tar.gz"
     tar xzf "krb5-${KRB5_VERSION}.tar.gz"
     cd "krb5-${KRB5_VERSION}/src"
+    # Unset DESTDIR to avoid it leaking from env.sh into this build
+    unset DESTDIR
     ./configure --prefix=/opt/krb5-static \
         --enable-static \
         --disable-shared \
@@ -94,8 +96,8 @@ if ! [ -f "${BUILD_CACHE}/libgssapi_krb5.a" ]; then
     rm -rf /tmp/krb5*
 fi
 
-# 3. Copy krb5 static libs to build-cache (DESTDIR + prefix = /artifacts/opt/krb5-static/)
-KRB5_STATIC="/artifacts/opt/krb5-static"
+# 3. Copy krb5 static libs to build-cache
+KRB5_STATIC="/opt/krb5-static"
 cp -v "${KRB5_STATIC}/lib/libgssapi_krb5.a" "${BUILD_CACHE}/libgssapi_krb5.a"
 cp -v "${KRB5_STATIC}/lib/libkrb5.a" "${BUILD_CACHE}/libkrb5.a"
 cp -v "${KRB5_STATIC}/lib/libk5crypto.a" "${BUILD_CACHE}/libk5crypto.a"
@@ -121,6 +123,8 @@ if ! [ -f "${BUILD_CACHE}/libpcap.a" ]; then
     curl -sL "https://www.tcpdump.org/release/libpcap-${LIBPCAP_VERSION}.tar.gz" -o "libpcap-${LIBPCAP_VERSION}.tar.gz"
     tar xzf "libpcap-${LIBPCAP_VERSION}.tar.gz"
     cd "libpcap-${LIBPCAP_VERSION}"
+    # Unset DESTDIR to avoid it leaking from env.sh
+    unset DESTDIR
     ./configure --prefix=/opt/libpcap-static \
         --disable-shared \
         --disable-dbus \
