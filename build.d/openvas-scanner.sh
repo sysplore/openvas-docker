@@ -69,8 +69,9 @@ fi
 
 # Copy redis config (always needed)
 mkdir -p ${INSTALL_ROOT}etc/redis/
-if [ -f ../config/redis-openvas.conf ]; then
-    cp -v ../config/redis-openvas.conf $INSTALL_ROOT/etc/redis/
+REDIS_CONF=$(find /build -name redis-openvas.conf -print -quit 2>/dev/null || true)
+if [ -n "$REDIS_CONF" ]; then
+    cp -v "$REDIS_CONF" ${INSTALL_ROOT}etc/redis/
 fi
 
 cd ../..
