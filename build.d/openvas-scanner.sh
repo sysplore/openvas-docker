@@ -65,7 +65,7 @@ if ! [ -f "${BUILD_CACHE}/libgssapi_krb5.a" ]; then
     echo "Building MIT Kerberos ${KRB5_VERSION} from source for static libraries..."
     apt install -y bison 2>/dev/null || true
     cd /tmp
-    curl -sL "https://kerberos.org/dist/krb5/${KRB5_VERSION}/krb5-${KRB5_VERSION}.tar.gz" -o "krb5-${KRB5_VERSION}.tar.gz"
+    curl -sL "https://web.mit.edu/kerberos/dist/krb5/1.20/krb5-${KRB5_VERSION}.tar.gz" -o "krb5-${KRB5_VERSION}.tar.gz"
     tar xzf "krb5-${KRB5_VERSION}.tar.gz"
     cd "krb5-${KRB5_VERSION}/src"
     ./configure --prefix=/opt/krb5-static \
