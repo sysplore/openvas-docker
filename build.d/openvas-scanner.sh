@@ -32,20 +32,56 @@ curl -o rustup.sh https://sh.rustup.rs
 bash ./rustup.sh -y
 . "$HOME/.cargo/env"
 
-# Pre-fetch cargo registry if crates.tar exists
 cd rust
-if [ -f /rust/crates.tar ]; then
+
+# Pre-fetch cargo registry if crates.tar exists
+if [ -f /rust/crates.tar ] && [ $(stat -c%s /rust/crates.tar) -ge 100 ]; then
     echo "Using pre-fetched crate cache"
     tar xvf /rust/crates.tar
 fi
 
-# Limit parallelism to avoid OOM during Rust compilation
-export CARGO_BUILD_JOBS=2
+# Set up build-cache for native Rust crates if not provided by crates.tar
+# The nasl-c-lib crate's build_support.rs expects static archives + headers in
+# crates/nasl-c-lib/build-cache/archives/
+SCANNER_RUST_DIR=$(pwd)
+BUILD_CACHE="${SCANNER_RUST_DIR}/crates/nasl-c-lib/build-cache/archives"
+if ! [ -d "${BUILD_CACHE}" ] || [ -z "$(ls -A "${BUILD_CACHE}/include/" 2>/dev/null)" ]; then
+    echo "Setting up build-cache for native Rust crates from system packages..."
+    mkdir -p "${BUILD_CACHE}/include"
+
+    # Copy static libraries from system packages
+    # These come from: libgcrypt20-dev, libgpg-error-dev, libpcap-dev, libkrb5-dev
+    for lib in libgcrypt.a libgpg-error.a libpcap.a \
+               libgssapi_krb5.a libkrb5.a libk5crypto.a \
+               libcom_err.a libkrb5support.a; do
+        found=$(find /usr -name "$lib" -print -quit 2>/dev/null || true)
+        if [ -n "$found" ]; then
+            cp -v "$found" "${BUILD_CACHE}/"
+        else
+            echo "WARNING: Static library $lib not found. Build may fail."
+        fi
+    done
+
+    # Copy required headers (gcrypt.h, gpg-error.h from libgcrypt20-dev, libgpg-error-dev)
+    for hdr in gcrypt.h gpg-error.h; do
+        found=$(find /usr -name "$hdr" -print -quit 2>/dev/null || true)
+        if [ -n "$found" ]; then
+            cp -v "$found" "${BUILD_CACHE}/include/"
+        else
+            echo "WARNING: Header $hdr not found."
+        fi
+    done
+
+    echo "Build-cache contents:"
+    ls -la "${BUILD_CACHE}/"
+    ls -la "${BUILD_CACHE}/include/"
+fi
 
 # Build openvasd
 cd src/openvasd
 cargo fetch --locked
-if [ -f /rust/crates.tar ]; then
+if [ -f /rust/crates.tar ] && [ $(stat -c%s /rust/crates.tar) -ge 100 ]; then
+    tar xvf /rust/crates.tar
     cargo build --frozen --release -vv
 else
     cargo build --release -vv
@@ -53,7 +89,7 @@ fi
 
 cd ../scannerctl
 cargo fetch --locked
-if [ -f /rust/crates.tar ]; then
+if [ -f /rust/crates.tar ] && [ $(stat -c%s /rust/crates.tar) -ge 100 ]; then
     cargo build --frozen --release -vv
 else
     cargo build --release -vv
