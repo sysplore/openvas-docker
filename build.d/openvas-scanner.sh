@@ -83,9 +83,13 @@ find / -name redis-openvas.conf
 echo "#####################################################"
 echo "#####################################################"
 echo "#####################################################"
-echo "Copy openvasd binaries to $INSTALL_ROOT"
-cp -v ./target/release/openvasd $INSTALL_ROOT/bin/
-cp -v ./target/release/scannerctl $INSTALL_ROOT/bin/
+echo "Copy openvasd binaries to $INSTALL_ROOT (if built)"
+if [ -f ./target/release/openvasd ]; then
+    cp -v ./target/release/openvasd $INSTALL_ROOT/bin/
+fi
+if [ -f ./target/release/scannerctl ]; then
+    cp -v ./target/release/scannerctl $INSTALL_ROOT/bin/
+fi
 mkdir -p ${INSTALL_ROOT}etc/redis/
 cp -v ../config/redis-openvas.conf $INSTALL_ROOT/etc/redis/
 cd /build
