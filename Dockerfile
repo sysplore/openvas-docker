@@ -28,6 +28,7 @@ RUN bash /build.d/openvas-smb.sh
 COPY build.d/gvmd.sh /build.d/
 RUN bash /build.d/gvmd.sh
 COPY build.d/openvas-scanner.sh /build.d/
+COPY rust/crates.tar /rust/
 RUN bash /build.d/openvas-scanner.sh
 COPY build.d/pg-gvm.sh /build.d/
 RUN bash /build.d/pg-gvm.sh
@@ -47,7 +48,7 @@ LABEL maintainer="contact@mitexleo.one" \
 EXPOSE 9392
 ENV LANG=C.UTF-8
 # Copy the just built from stage 0
-COPY --from=0 artifacts/ /
+COPY --from=builder /artifacts/. /
 
 # The python bits.
 # these need to be rolled into a single layer that removes any excess bits.
@@ -76,8 +77,8 @@ COPY gsa-final/ /usr/local/share/gvm/gsad/web/
 COPY build.rc /gvm-versions
 COPY branding/ /branding/
 RUN bash /branding/branding.sh
-COPY scripts/ /scripts/
-COPY ver.current /
+COPY scripts/* /scripts/
+COPY ver.current /ver.current
 #RUN apt update && apt install libcap2-bin net-tools -y
 # allow openvas to access raw sockets and all kind of network related tasks
 #RUN setcap cap_net_raw,cap_net_admin+eip /usr/local/sbin/openvas
@@ -103,6 +104,9 @@ COPY globals.sql.xz /usr/lib/globals.sql.xz
 COPY gvmd.sql.xz /usr/lib/gvmd.sql.xz
 COPY var-lib.tar.xz /usr/lib/var-lib.tar.xz
 COPY scripts/* /scripts/
+RUN apt-get update && apt-get install -y capnproto
+RUN apt remove python3-redis -y
+RUN pip3 install redis==7.1.0 --break-system-packages
 
 # Healthcheck needs be an on image script that will know what service is running and check it.
 # Current image function stored in /usr/local/etc/running-as
