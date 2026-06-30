@@ -50,10 +50,10 @@ if ! [ -d "${BUILD_CACHE}" ] || [ -z "$(ls -A "${BUILD_CACHE}/include/" 2>/dev/n
     mkdir -p "${BUILD_CACHE}/include"
 
     # Copy static libraries from system packages
-    # These come from: libgcrypt20-dev, libgpg-error-dev, libpcap-dev, libkrb5-dev
+    # These come from: libgcrypt20-dev, libgpg-error-dev, libpcap-dev, libkrb5-dev, libssl-dev
     for lib in libgcrypt.a libgpg-error.a libpcap.a \
                libgssapi_krb5.a libkrb5.a libk5crypto.a \
-               libcom_err.a libkrb5support.a; do
+               libcom_err.a libkrb5support.a libssl.a libcrypto.a; do
         found=$(find /usr -name "$lib" -print -quit 2>/dev/null || true)
         if [ -n "$found" ]; then
             cp -v "$found" "${BUILD_CACHE}/"
@@ -62,8 +62,8 @@ if ! [ -d "${BUILD_CACHE}" ] || [ -z "$(ls -A "${BUILD_CACHE}/include/" 2>/dev/n
         fi
     done
 
-    # Copy required headers (gcrypt.h, gpg-error.h from libgcrypt20-dev, libgpg-error-dev)
-    for hdr in gcrypt.h gpg-error.h; do
+    # Copy required headers
+    for hdr in gcrypt.h gpg-error.h krb5.h; do
         found=$(find /usr -name "$hdr" -print -quit 2>/dev/null || true)
         if [ -n "$found" ]; then
             cp -v "$found" "${BUILD_CACHE}/include/"
@@ -72,9 +72,21 @@ if ! [ -d "${BUILD_CACHE}" ] || [ -z "$(ls -A "${BUILD_CACHE}/include/" 2>/dev/n
         fi
     done
 
+    # Copy gssapi headers (needed by libopenvas-krb5-sys)
+    mkdir -p "${BUILD_CACHE}/include/gssapi"
+    for hdr in gssapi.h gssapi_krb5.h; do
+        found=$(find /usr -name "$hdr" -print -quit 2>/dev/null || true)
+        if [ -n "$found" ]; then
+            cp -v "$found" "${BUILD_CACHE}/include/gssapi/"
+        else
+            echo "WARNING: Header gssapi/$hdr not found."
+        fi
+    done
+
     echo "Build-cache contents:"
     ls -la "${BUILD_CACHE}/"
     ls -la "${BUILD_CACHE}/include/"
+    ls -la "${BUILD_CACHE}/include/gssapi/" 2>/dev/null || true
 fi
 
 # Build openvasd
