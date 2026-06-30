@@ -112,10 +112,24 @@ cp -v "${KRB5_STATIC}/include/gssapi/gssapi_alloc.h" "${BUILD_CACHE}/include/gss
 cp -v "${KRB5_STATIC}/include/gssapi/gssapi_ext.h" "${BUILD_CACHE}/include/gssapi/gssapi_ext.h" 2>/dev/null || true
 cp -v "${KRB5_STATIC}/include/gssapi/gssapi_generic.h" "${BUILD_CACHE}/include/gssapi/gssapi_generic.h" 2>/dev/null || true
 
-# 5. Use system libpcap.a (Debian's libpcap-dev provides it)
-cp -v /usr/lib/${DEB_HOST_MULTIARCH}/libpcap.a "${BUILD_CACHE}/libpcap.a" 2>/dev/null || \
-    cp -v $(find /usr -name 'libpcap.a' -print -quit) "${BUILD_CACHE}/libpcap.a" 2>/dev/null || \
-    echo "WARNING: libpcap.a not found"
+# 5. Build libpcap from source to avoid D-Bus dependency (Debian's libpcap.a links against libdbus)
+LIBPCAP_VERSION=1.10.3
+if ! [ -f "${BUILD_CACHE}/libpcap.a" ]; then
+    echo "Building libpcap ${LIBPCAP_VERSION} from source..."
+    cd /tmp
+    curl -sL "https://www.tcpdump.org/release/libpcap-${LIBPCAP_VERSION}.tar.gz" -o "libpcap-${LIBPCAP_VERSION}.tar.gz"
+    tar xzf "libpcap-${LIBPCAP_VERSION}.tar.gz"
+    cd "libpcap-${LIBPCAP_VERSION}"
+    ./configure --prefix=/opt/libpcap-static \
+        --disable-shared \
+        --disable-dbus \
+        --quiet
+    make -j2
+    make install
+    rm -rf /tmp/libpcap*
+fi
+cp -v /opt/libpcap-static/lib/libpcap.a "${BUILD_CACHE}/libpcap.a"
+cp -v /opt/libpcap-static/include/pcap.h "${BUILD_CACHE}/include/pcap.h"
 
 echo "Build-cache contents:"
 ls -la "${BUILD_CACHE}/"
