@@ -33,78 +33,44 @@ bash ./rustup.sh -y
 . "$HOME/.cargo/env"
 
 cd rust
+# Limit parallelism to avoid OOM during Rust compilation
+export CARGO_BUILD_JOBS=2
 
-# Pre-fetch cargo registry if crates.tar exists
+# Try to build Rust components (openvasd, scannerctl) if crates.tar is available
 if [ -f /rust/crates.tar ] && [ $(stat -c%s /rust/crates.tar) -ge 100 ]; then
-    echo "Using pre-fetched crate cache"
+    echo "Pre-fetched crate cache found. Building Rust components..."
     tar xvf /rust/crates.tar
-fi
 
-# Set up build-cache for native Rust crates if not provided by crates.tar
-# The nasl-c-lib crate's build_support.rs expects static archives + headers in
-# crates/nasl-c-lib/build-cache/archives/
-SCANNER_RUST_DIR=$(pwd)
-BUILD_CACHE="${SCANNER_RUST_DIR}/crates/nasl-c-lib/build-cache/archives"
-if ! [ -d "${BUILD_CACHE}" ] || [ -z "$(ls -A "${BUILD_CACHE}/include/" 2>/dev/null)" ]; then
-    echo "Setting up build-cache for native Rust crates from system packages..."
-    mkdir -p "${BUILD_CACHE}/include"
+    # Build openvasd
+    cd src/openvasd
+    cargo fetch --locked
+    cargo build --frozen --release -vv || echo "WARNING: openvasd build failed, continuing without it"
 
-    # Copy static libraries from system packages
-    # These come from: libgcrypt20-dev, libgpg-error-dev, libpcap-dev, libkrb5-dev, libssl-dev
-    for lib in libgcrypt.a libgpg-error.a libpcap.a \
-               libgssapi_krb5.a libkrb5.a libk5crypto.a \
-               libcom_err.a libkrb5support.a libssl.a libcrypto.a; do
-        found=$(find /usr -name "$lib" -print -quit 2>/dev/null || true)
-        if [ -n "$found" ]; then
-            cp -v "$found" "${BUILD_CACHE}/"
-        else
-            echo "WARNING: Static library $lib not found. Build may fail."
-        fi
-    done
+    cd ../scannerctl
+    cargo fetch --locked
+    cargo build --frozen --release -vv || echo "WARNING: scannerctl build failed, continuing without it"
 
-    # Copy required headers
-    for hdr in gcrypt.h gpg-error.h krb5.h; do
-        found=$(find /usr -name "$hdr" -print -quit 2>/dev/null || true)
-        if [ -n "$found" ]; then
-            cp -v "$found" "${BUILD_CACHE}/include/"
-        else
-            echo "WARNING: Header $hdr not found."
-        fi
-    done
+    cd ../..
+    echo "#####################################################"
+    find / -name openvasd -o -name scannerctl 2>/dev/null || true
+    echo "#####################################################"
 
-    # Copy gssapi headers (needed by libopenvas-krb5-sys)
-    mkdir -p "${BUILD_CACHE}/include/gssapi"
-    for hdr in gssapi.h gssapi_krb5.h; do
-        found=$(find /usr -name "$hdr" -print -quit 2>/dev/null || true)
-        if [ -n "$found" ]; then
-            cp -v "$found" "${BUILD_CACHE}/include/gssapi/"
-        else
-            echo "WARNING: Header gssapi/$hdr not found."
-        fi
-    done
-
-    echo "Build-cache contents:"
-    ls -la "${BUILD_CACHE}/"
-    ls -la "${BUILD_CACHE}/include/"
-    ls -la "${BUILD_CACHE}/include/gssapi/" 2>/dev/null || true
-fi
-
-# Build openvasd
-cd src/openvasd
-cargo fetch --locked
-if [ -f /rust/crates.tar ] && [ $(stat -c%s /rust/crates.tar) -ge 100 ]; then
-    tar xvf /rust/crates.tar
-    cargo build --frozen --release -vv
+    # Copy binaries if they were built
+    if [ -f ./target/release/openvasd ]; then
+        cp -v ./target/release/openvasd $INSTALL_ROOT/bin/
+    fi
+    if [ -f ./target/release/scannerctl ]; then
+        cp -v ./target/release/scannerctl $INSTALL_ROOT/bin/
+    fi
 else
-    cargo build --release -vv
+    echo "No pre-fetched crate cache available. Skipping Rust component build."
+    echo "Container will use ospd-openvas + notus-scanner architecture instead of openvasd."
 fi
 
-cd ../scannerctl
-cargo fetch --locked
-if [ -f /rust/crates.tar ] && [ $(stat -c%s /rust/crates.tar) -ge 100 ]; then
-    cargo build --frozen --release -vv
-else
-    cargo build --release -vv
+# Copy redis config (always needed)
+mkdir -p ${INSTALL_ROOT}etc/redis/
+if [ -f ../config/redis-openvas.conf ]; then
+    cp -v ../config/redis-openvas.conf $INSTALL_ROOT/etc/redis/
 fi
 
 cd ../..

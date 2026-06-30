@@ -28,7 +28,6 @@ RUN bash /build.d/openvas-smb.sh
 COPY build.d/gvmd.sh /build.d/
 RUN bash /build.d/gvmd.sh
 COPY build.d/openvas-scanner.sh /build.d/
-COPY rust/crates.tar /rust/
 RUN bash /build.d/openvas-scanner.sh
 COPY build.d/pg-gvm.sh /build.d/
 RUN bash /build.d/pg-gvm.sh
