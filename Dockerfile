@@ -74,8 +74,14 @@ RUN bash /gpg-keys.sh
 # Copy in the prebuilt gsa react code.
 COPY gsa-final/ /usr/local/share/gvm/gsad/web/
 COPY build.rc /gvm-versions
+# Inject branding config and override script into the GSA web root
+COPY branding/config.js /usr/local/share/gvm/gsad/web/config.js
 COPY branding/ /branding/
-RUN bash /branding/branding.sh
+RUN bash /branding/branding.sh && \
+    # Inject branding-override.js into index.html if not already there
+    if ! grep -q 'branding-override' /usr/local/share/gvm/gsad/web/index.html; then \
+        sed -i 's|<script type="text/javascript" src="/config.js"></script>|<script type="text/javascript" src="/config.js"></script>\n    <script type="text/javascript" src="/img/branding-override.js"></script>|' /usr/local/share/gvm/gsad/web/index.html; \
+    fi
 COPY scripts/* /scripts/
 COPY ver.current /ver.current
 #RUN apt update && apt install libcap2-bin net-tools -y
