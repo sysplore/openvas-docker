@@ -1,26 +1,61 @@
-<?xml version="1.0" encoding="UTF-8" ?>
 <svg
     xmlns="http://www.w3.org/2000/svg"
-    viewBox="0 0 300 120"
-    width="300"
-    height="120"
+    viewBox="0 0 467 469"
+    width="467"
+    height="469"
 >
-  <style>
-    .text { fill: #555; font-family: Arial, sans-serif; font-size: 13px; }
-    .brand { fill: #2e7d32; font-family: Arial, sans-serif; font-size: 18px; font-weight: bold; }
-    .url { fill: #888; font-family: Arial, sans-serif; font-size: 11px; }
-  </style>
+  <rect width="467" height="469" fill="transparent" />
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#e8f5e9" />
+      <stop offset="100%" stop-color="#f1f8e9" />
+    </linearGradient>
+  </defs>
+  <path
+        d="M433.717 118.904V350.095L233.5 465.689L33.2832 350.095V118.904L233.5 3.30957L433.717 118.904Z"
+        fill="url(#bg)"
+        stroke="#4caf50"
+        stroke-width="2"
+    />
   <text
-        x="150"
-        y="35"
+        x="233.5"
+        y="220"
         text-anchor="middle"
-        class="text"
-    >Containerized and brought to you by</text>
-  <text x="150" y="65" text-anchor="middle" class="brand">Sysplore</text>
+        font-family="Arial, sans-serif"
+        font-size="18"
+        fill="#333"
+    >
+    Containerized and
+  </text>
   <text
-        x="150"
-        y="90"
+        x="233.5"
+        y="248"
         text-anchor="middle"
-        class="url"
-    >sysplore.github.io/openvas-docker</text>
+        font-family="Arial, sans-serif"
+        font-size="18"
+        fill="#333"
+    >
+    brought to you by
+  </text>
+  <text
+        x="233.5"
+        y="285"
+        text-anchor="middle"
+        font-family="Arial, sans-serif"
+        font-size="24"
+        font-weight="bold"
+        fill="#2e7d32"
+    >
+    Sysplore
+  </text>
+  <text
+        x="233.5"
+        y="315"
+        text-anchor="middle"
+        font-family="Arial, sans-serif"
+        font-size="12"
+        fill="#666"
+    >
+    github.com/sysplore/openvas-docker
+  </text>
 </svg>
