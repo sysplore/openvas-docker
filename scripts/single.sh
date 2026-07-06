@@ -374,13 +374,12 @@ echo "Starting ospd-openvas"
 	--disable-notus-hashsum-verification true &
 
 echo "Starting Greenbone Vulnerability Manager..."
-su -c "gvmd --listen-group=gvm  \
+su -c "gvmd -a 0.0.0.0 -p 9390 --listen-group=gvm  \
 				--osp-vt-update=/var/run/ospd/ospd-openvas.sock \
 				--max-email-attachment-size=64000000 \
 				--max-email-include-size=64000000 \
 				--max-email-message-size=64000000 \
 				--broker-address='' \
-				--unix-socket=/run/gvmd/gvmd.sock \
 				\"$GVMD_ARGS\"" gvm
 
 
@@ -485,15 +484,11 @@ if [ $SKIPGSAD == "false" ]; then
 	#su -c "gsad --verbose --http-only --no-redirect --port=9392" gvm
 	if [ $HTTPS == "true" ]; then
 				su -c "gsad --verbose --timeout=$GSATIMEOUT \
-					--munix-socket=/run/gvmd/gvmd.sock \
 					--gnutls-priorities=SECURE128:+SECURE192:-VERS-TLS-ALL:+VERS-TLS1.2 \
 					--no-redirect \
 					--port=9392 $GSAD_ARGS" gvm &
 			else
-				su -c "gsad --verbose --timeout=$GSATIMEOUT \
-					--munix-socket=/run/gvmd/gvmd.sock \
-					--http-only --no-redirect --port=9392 \
-					$GSAD_ARGS" gvm &
+				su -c "gsad --verbose --timeout=$GSATIMEOUT --http-only --no-redirect --port=9392 $GSAD_ARGS" gvm &
 			fi
 	# Wait for GSAD to be ready
 	echo "Waiting for GSAD to start..."
