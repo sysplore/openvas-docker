@@ -374,7 +374,7 @@ echo "Starting ospd-openvas"
 	--disable-notus-hashsum-verification true &
 
 echo "Starting Greenbone Vulnerability Manager..."
-su -c "gvmd -a 0.0.0.0 -p 9390 --listen-group=gvm  \
+su -c "gvmd --listen-group=gvm  \
 				--osp-vt-update=/var/run/ospd/ospd-openvas.sock \
 				--max-email-attachment-size=64000000 \
 				--max-email-include-size=64000000 \
