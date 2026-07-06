@@ -69,8 +69,12 @@ case  $FUNC in
 	single|refresh)
 		FAIL=0
 		# gvmd
-		nmap -p 9390 localhost| grep -qs "9390.*open" || FAIL=1
-			if [ $FAIL -eq 1 ]; then SERVICE="gvmd\n"; fi
+		if [ -S /run/gvmd/gvmd.sock ]; then
+			:
+		else
+			FAIL=1
+			SERVICE="gvmd\n"
+		fi
 		# openvas
 		# Only check openvas if gvmd is running. Otherwise it hangs and then gvmd can't start.
 		if [ $FAIL -eq 0 ]; then
