@@ -374,14 +374,13 @@ echo "Starting ospd-openvas"
 	--disable-notus-hashsum-verification true &
 
 echo "Starting Greenbone Vulnerability Manager..."
-su -c "gvmd -a 0.0.0.0 -p 9390 --listen-group=gvm  \
-				--osp-vt-update=/var/run/ospd/ospd-openvas.sock \
-				--max-email-attachment-size=64000000 \
-				--max-email-include-size=64000000 \
-				--max-email-message-size=64000000 \
-				--broker-address='' \
-				--unix-socket=/run/gvmd/gvmd.sock \
-				\"$GVMD_ARGS\"" gvm
+su -c "gvmd  -a 0.0.0.0 -p 9390 --listen-group=gvm  \
+			--osp-vt-update=/var/run/ospd/ospd-openvas.sock \
+			--max-email-attachment-size=64000000 \
+			--max-email-include-size=64000000 \
+			--max-email-message-size=64000000 \
+			--broker-address='' \
+			\"$GVMD_ARGS\"" gvm
 
 
 until su -c "gvmd --get-users" gvm; do
@@ -422,15 +421,6 @@ elif [ $CREATE_EMPTY_DATABASE = "true" ]; then
 	echo "Granting admin access to defaults"
 	su -c "gvmd --modify-setting 78eceaec-3385-11ea-b237-28d24461215b --value $ADMINUUID" gvm
 fi
-
-# Check to see if the HealthCheck user exists. If not, create it and set a new random password.
-echo "Checking for/creating healthcheck user."
-mkdir -p /etc/gvm
-touch /etc/gvm/healthcheck.pass
-chown gvm:gvm /etc/gvm/healthcheck.pass
-chmod 600 /etc/gvm/healthcheck.pass
-su -c "gvmd --create-user=healthcheck --role=Guest 2>/dev/null; gvmd --user=healthcheck --new-password=$(openssl rand -base64 32)" gvm || true
-su -c "gvmd --get-users --verbose | grep healthcheck | awk '{print \$2}' > /etc/gvm/healthcheck.pass" gvm || true
 
 echo "resetting pipefail"
 set -Eeuo pipefail
@@ -493,14 +483,13 @@ if [ $SKIPGSAD == "false" ]; then
 	echo "Starting Greenbone Security Assistant..."
 	#su -c "gsad --verbose --http-only --no-redirect --port=9392" gvm
 	if [ $HTTPS == "true" ]; then
-				su -c "gsad --verbose --timeout=$GSATIMEOUT \
-					--mlisten 127.0.0.1 -m 9390 \
-					--gnutls-priorities=SECURE128:+SECURE192:-VERS-TLS-ALL:+VERS-TLS1.2 \
-					--no-redirect \
-					--listen=0.0.0.0 --port=9392 $GSAD_ARGS" gvm &
-			else
-				su -c "gsad --mlisten 127.0.0.1 -m 9390 --verbose --timeout=$GSATIMEOUT --http-only --no-redirect --listen=0.0.0.0 --port=9392 $GSAD_ARGS" gvm &
-			fi
+		su -c "gsad --mlisten 127.0.0.1 -m 9390 --verbose --timeout=$GSATIMEOUT \
+				--gnutls-priorities=SECURE128:+SECURE192:-VERS-TLS-ALL:+VERS-TLS1.2 \
+				--no-redirect \
+				--listen=0.0.0.0 --port=9392 $GSAD_ARGS" gvm &
+	else
+		su -c "gsad --mlisten 127.0.0.1 -m 9390 --verbose --timeout=$GSATIMEOUT --http-only --no-redirect --listen=0.0.0.0 --port=9392 $GSAD_ARGS" gvm &
+	fi
 	# Wait for GSAD to be ready
 	echo "Waiting for GSAD to start..."
 	sleep 3
