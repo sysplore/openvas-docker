@@ -1,4 +1,5 @@
 #!/bin/bash
+TS=$(date)
 SKIPGSAD=${SKIPGSAD:-false}
 FUNC=$(cat /usr/local/etc/running-as)
 ContainerShutdown() {
@@ -10,7 +11,7 @@ ContainerShutdown() {
 HIGHROOT=$(df -h / | tr -d % | awk /overlay/'{ if ( $5 > 95 ) print $4}')
 ROOTSPC=$(df / | tr -d %| awk /overlay/'{print $4}')
 if ! [ -z $HIGHROOT ]; then
-	echo -e "Available Container Disk Space low. (/ = ${HIGHROOT} available).\n if < 100M, container will shutdown." >> /usr/local/var/log/gvm/healthchecks.log
+	echo -e "$TS Available Container Disk Space low. (/ = ${HIGHROOT} available).\n if < 100M, container will shutdown." >> /usr/local/var/log/gvm/healthchecks.log
 	SERVICE="$SERVICE root disk low\n"
 	if [ $ROOTSPC -lt 100000 ]; then
 		ContainerShutdown
@@ -20,7 +21,7 @@ fi
 HIGHDATA=$(df -h | tr -d % | awk /data/'{ if ( $5 > 95 ) print $4}')
 DATASPC=$(df | tr -d %| awk /data/'{print $4}')
 if ! [ -z $HIGHDATA ]; then
-	echo "Available Container Disk Space low. (/data = ${HIGHDATA} available).\n if < 100M, container will shutdown.)" >> /usr/local/var/log/gvm/healthchecks.log
+	echo "$TS Available Container Disk Space low. (/data = ${HIGHDATA} available).\n if < 100M, container will shutdown.)" >> /usr/local/var/log/gvm/healthchecks.log
 	SERVICE="$SERVICE data disk low\n"
 	FAIL=7
 	if [ $DATASPC -lt 100000 ]; then
@@ -28,10 +29,19 @@ if ! [ -z $HIGHDATA ]; then
 	fi
 fi
 
+if ! [ -f /running ]; then
+	echo "Not running yet"
+	exit
+fi
+
+GMPPASS="$(cat /etc/healthcheck.pass)"
+
 case  $FUNC in
 	openvas)
-		UUID=$( su -c "gvmd --get-scanners" gvm | awk /OpenVAS/'{print  $1}' )
-		su -c "gvmd --verify-scanner=$UUID" gvm | grep OpenVAS || exit 1
+		if [ -f /run/gvmd/gvmd.pid ]; then
+			UUID=$( su -c "gvmd --get-scanners" gvm | awk /OpenVAS/'{print  $1}' )
+			su -c "gvmd --verify-scanner=$UUID" gvm | grep OpenVAS || exit 1
+		fi
 	;;
 	gvmd)
 		#gvmd listens on 9390, but not http
@@ -69,9 +79,8 @@ case  $FUNC in
 	single|refresh)
 		FAIL=0
 		# gvmd
-		if [ -S /run/gvmd/gvmd.sock ]; then
-			:
-		else
+		# Use GMP over Unix socket to verify gvmd is responding
+		if ! su -c "gvm-cli --gmp-username='healthcheck' --gmp-password='$GMPPASS' socket --xml '<get_version/>' > /dev/null 2>&1" gvm; then
 			FAIL=1
 			SERVICE="gvmd\n"
 		fi
@@ -86,7 +95,7 @@ case  $FUNC in
 		fi
 		# gsad
 		if [ "$SKIPGSAD" == "false" ]; then
-			curl -f http://localhost:9392/ || curl -kf https://localhost:9392/ || FAIL=3
+			curl -f -o /dev/null http://localhost:9392/ || curl -kf -o /dev/null https://localhost:9392/ || FAIL=3
 			if [ $FAIL -eq 3 ]; then SERVICE="$SERVICE gsad\n"; fi
 		fi
 		# redis
@@ -97,15 +106,14 @@ case  $FUNC in
 			if [ $FAIL -eq 5 ]; then SERVICE="$SERVICE postgresql\n"; fi
 
 		if [ $FAIL -ne 0 ]; then
-			echo " HEALTHECHECK FAILED !" >> /usr/local/var/log/gvm/healthchecks.log
-			echo " These services failed:"  >> /usr/local/var/log/gvm/healthchecks.log
+			echo "$TS  HEALTHECHECK FAILED !" >> /usr/local/var/log/gvm/healthchecks.log
+			echo "$TS  These services failed:"  >> /usr/local/var/log/gvm/healthchecks.log
 			echo -e "$SERVICE" >> /usr/local/var/log/gvm/healthchecks.log
 			exit 1
 		else
-			echo " Healthchecks completed with no issues." >> /usr/local/var/log/gvm/healthchecks.log
+			echo "$TS  Healthchecks completed with no issues." >> /usr/local/var/log/gvm/healthchecks.log
 
 		fi
-
 
 
 esac

@@ -6,6 +6,7 @@ cleanup() {
 	echo "#################################"
 	echo "Dumping all logs"
 	echo "#################################"
+	rm -f /running
     tail /var/log/gvm/*
 	echo "Log dump complete"
 	echo "killing gvmd"
@@ -60,13 +61,9 @@ function DBCheck {
         fi
 }
 
-# 21.4.4-01 and up uses a slightly different structure on /data, so we look for the old, and correct if we find it.
-if [ -f /data/var-log/gvmd.log ]; then
-	echo " Correcting Volume dir structure"
-	mkdir -p /data/var-log/gvm
-	mv /data/var-log/*.log /data/var-log/gvm
-	chown -R gvm:gvm /data/var-log/gvm
-fi
+# Make sure the gvmd.pid is not there to ensure healthcheck doesn't start early.
+rm -f /run/gvmd/gvmd.pid
+rm -f /running
 
 # Fire up redis
 redis-server --unixsocket /run/redis/redis.sock --unixsocketperm 777 \
@@ -389,7 +386,7 @@ until su -c "gvmd --get-users" gvm; do
 	sleep 1
 done
 
-if ! [ -L /var/run/ospd/ospd-openvas.sock ]; then
+if ! [ -L /var/run/ospd/ospd.sock ]; then
 	ln -s /var/run/ospd/ospd-openvas.sock /var/run/ospd/ospd.sock
 fi
 
@@ -421,7 +418,14 @@ elif [ $CREATE_EMPTY_DATABASE = "true" ]; then
 	echo "admin user UUID is $ADMINUUID"
 	echo "Granting admin access to defaults"
 	su -c "gvmd --modify-setting 78eceaec-3385-11ea-b237-28d24461215b --value $ADMINUUID" gvm
-fi
+	fi
+
+# Check to see if the HealthCheck user exists. If not, create it and set a new random password.
+echo "Checking for/creating healthcheck user."
+touch /etc/healthcheck.pass
+chown gvm:gvm /etc/healthcheck.pass
+chmod 600 /etc/healthcheck.pass
+su -c "/scripts/create-hc-user.sh \"$PASSWORD\"" gvm  || true
 
 echo "resetting pipefail"
 set -Eeuo pipefail
@@ -514,6 +518,7 @@ else
 	echo "Skipping GSAD start because SKIPGSAD=$SKIPGSAD"
 fi
 GVMVER=$(su -c "gvmd --version" gvm )
+touch /running
 echo "++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
 echo "+ Your GVM/openvas/postgresql container is now ready to use! +"
 echo "++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
