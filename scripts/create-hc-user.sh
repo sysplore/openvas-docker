@@ -50,9 +50,11 @@ make_gvm_cli_auth_config() {
   local cfg="$3"
 
   {
-    printf '[Auth]\n'
-    printf 'gmp_username=%s\n' "$user"
-    printf 'gmp_password=%s\n' "$pass"
+    printf '[main]\n'
+    printf 'timeout=60\n'
+    printf '[gmp]\n'
+    printf 'username=%s\n' "$user"
+    printf 'password=%s\n' "$pass"
   } > "$cfg"
 
   chmod 0600 "$cfg"
@@ -72,17 +74,22 @@ random_password_19() {
 
 write_health_password_file() {
   local pass="$1"
-  local tmpfile
-
-  tmpfile="$(mktemp)"
-
-  printf '%s\n' "$pass" > "$tmpfile"
-  chown "$GVM_LOCAL_USER:$GVM_LOCAL_GROUP" "$tmpfile"
-  chmod 0600 "$tmpfile"
-  mv "$tmpfile" "$GVM_HEALTH_PASS_FILE"
-
-  chown "$GVM_LOCAL_USER:$GVM_LOCAL_GROUP" "$GVM_HEALTH_PASS_FILE"
-  chmod 0600 "$GVM_HEALTH_PASS_FILE"
+  # Write directly to the existing file instead of mv (avoids /etc/ dir perm issue)
+  # The file is pre-created and owned by gvm:gvm from single.sh
+  printf '%s\n' "$pass" > "$GVM_HEALTH_PASS_FILE" 2>/dev/null || {
+    # Fallback: try with tee if direct write fails
+    printf '%s\n' "$pass" | tee "$GVM_HEALTH_PASS_FILE" > /dev/null 2>&1 || true
+  }
+  # Verify the file was written
+  if [ -s "$GVM_HEALTH_PASS_FILE" ]; then
+    echo "Healthcheck password written successfully to $GVM_HEALTH_PASS_FILE"
+  else
+    echo "WARNING: Failed to write healthcheck password to $GVM_HEALTH_PASS_FILE" >&2
+    # Last resort: use dd to write
+    dd status=none of="$GVM_HEALTH_PASS_FILE" <<< "$pass" 2>/dev/null || true
+    chown "$GVM_LOCAL_USER:$GVM_LOCAL_GROUP" "$GVM_HEALTH_PASS_FILE" 2>/dev/null || true
+    chmod 0600 "$GVM_HEALTH_PASS_FILE" 2>/dev/null || true
+  fi
 }
 
 gmp_admin() {

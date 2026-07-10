@@ -109,8 +109,20 @@ if [ ! -f "/setup" ]; then
 fi
 PGFAIL=0
 PGUPFAIL=0
-echo "Starting PostgreSQL..."
-su -c "/usr/lib/postgresql/${PGVER}/bin/pg_ctl -D /data/database start" postgres || PGFAIL=$?
+# Clean up stale PostgreSQL lock files from previous unclean shutdowns
+if [ -f /data/database/postmaster.pid ]; then
+	PID=$(head -1 /data/database/postmaster.pid 2>/dev/null || echo 0)
+	if [ -n "$PID" ] && [ "$PID" != "0" ] && ! kill -0 "$PID" 2>/dev/null; then
+		echo "Removing stale PostgreSQL lock file (PID $PID not running)"
+		rm -f /data/database/postmaster.pid
+		rm -f /data/database/postmaster.opts
+	fi
+fi
+if [ -f /var/run/postgresql/.s.PGSQL.5432.lock ]; then
+	rm -f /var/run/postgresql/.s.PGSQL.5432.lock
+fi
+echo "Starting PostgreSQL (with long timeout for crash recovery)..."
+su -c "/usr/lib/postgresql/${PGVER}/bin/pg_ctl -D /data/database -t 120 start" postgres || PGFAIL=$?
 echo "pg exit with $PGFAIL ."
 if [ $PGFAIL -ne 0 ]; then
 	echo "It looks like postgres failed to start. ( Exit code: \"$?\" "
@@ -120,8 +132,15 @@ if [ $PGFAIL -ne 0 ]; then
 		echo "Looks like this is either not an upgrade problem, or the upgrade failed."
 		exit
 	else
-		echo " DB Upgrade was a success. Starting postgresql $PGVER"
-		su -c "/usr/lib/postgresql/${PGVER}/bin/pg_ctl -D /data/database start" postgres
+		echo " DB Upgrade was a success. Postgresql $PGVER should be running."
+		echo "Waiting for PostgreSQL to be ready..."
+		for i in $(seq 1 30); do
+			if su -c "pg_isready -U postgres" postgres 2>/dev/null | grep -q "accepting connections"; then
+				echo "PostgreSQL is ready after upgrade."
+				break
+			fi
+			sleep 2
+		done
 	fi
 fi
 echo "Checking for existing DB"
@@ -392,10 +411,32 @@ fi
 
 echo "Time to fixup the gvm accounts."
 
-if [ "$USERNAME" == "admin" ] && [ "$PASSWORD" != "admin" ] ; then
-	# Change the admin password
-	echo "Setting admin password"
-	su -c "gvmd --user=\"$USERNAME\" --new-password=\"$PASSWORD\" " gvm
+if [ $CREATE_EMPTY_DATABASE = "true" ]; then
+	# Fresh empty database - create admin user
+	echo "Creating Greenbone Vulnerability Manager admin user $USERNAME"
+	su -c "gvmd --role=\"Super Admin\" --create-user=\"$USERNAME\" --password=\"$PASSWORD\"" gvm
+	echo "admin user created"
+	ADMINUUID=$(su -c "gvmd --get-users --verbose | awk '{print \$2}' " gvm)
+	echo "admin user UUID is $ADMINUUID"
+	echo "Granting admin access to defaults"
+	su -c "gvmd --modify-setting 78eceaec-3385-11ea-b237-28d24461215b --value $ADMINUUID" gvm
+elif [ "$USERNAME" == "admin" ] && [ "$PASSWORD" != "admin" ] ; then
+	# Change the admin password only if a non-default password was provided
+	echo "Setting admin password to configured value"
+	PW_OUTPUT=$(su -c "gvmd --disable-password-policy --user=\"$USERNAME\" --new-password=\"$PASSWORD\" " gvm 2>&1)
+	PW_RC=$?
+	echo "Password command exit code: $PW_RC"
+	echo "Password command output: $PW_OUTPUT"
+	if [ $PW_RC -ne 0 ]; then
+		echo "WARNING: Failed to set admin password. Check the output above."
+	fi
+elif [ "$USERNAME" == "admin" ] ; then
+	# Both USERNAME and PASSWORD are "admin" (defaults).
+	# Upstream behavior: do NOT reset the password on every restart.
+	# The admin user keeps whatever password is already in the DB.
+	# If login is broken, the user should set PASSWORD env var to a non-default value.
+	echo "Both USERNAME and PASSWORD are default (admin). Skipping password reset."
+	echo "Set PASSWORD env var to a non-default value to force a password change."
 elif [ "$USERNAME" != "admin" ] ; then
 	# create user and set password
 	echo "Creating new user $USERNAME with supplied password."
@@ -410,15 +451,7 @@ elif [ "$USERNAME" != "admin" ] ; then
 	su -c "gvmd --modify-setting 78eceaec-3385-11ea-b237-28d24461215b --value $ADMINUUID" gvm
 	# Now ... we need to remove the "admin" account ...
 	su -c "gvmd --delete-user=admin" gvm
-elif [ $CREATE_EMPTY_DATABASE = "true" ]; then
-	echo "Creating Greenbone Vulnerability Manager admin user $USERNAME"
-	su -c "gvmd --role=\"Super Admin\" --create-user=\"$USERNAME\" --password=\"$PASSWORD\"" gvm
-	echo "admin user created"
-	ADMINUUID=$(su -c "gvmd --get-users --verbose | awk '{print \$2}' " gvm)
-	echo "admin user UUID is $ADMINUUID"
-	echo "Granting admin access to defaults"
-	su -c "gvmd --modify-setting 78eceaec-3385-11ea-b237-28d24461215b --value $ADMINUUID" gvm
-	fi
+fi
 
 # Check to see if the HealthCheck user exists. If not, create it and set a new random password.
 echo "Checking for/creating healthcheck user."
