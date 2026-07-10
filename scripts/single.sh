@@ -421,15 +421,44 @@ if [ $CREATE_EMPTY_DATABASE = "true" ]; then
 	echo "Granting admin access to defaults"
 	su -c "gvmd --modify-setting 78eceaec-3385-11ea-b237-28d24461215b --value $ADMINUUID" gvm
 elif [ "$USERNAME" == "admin" ] && [ "$PASSWORD" != "admin" ] ; then
-	# Change the admin password only if a non-default password was provided
-	echo "Setting admin password to configured value"
-	PW_OUTPUT=$(su -c "gvmd --disable-password-policy --user=\"$USERNAME\" --new-password=\"$PASSWORD\" " gvm 2>&1)
-	PW_RC=$?
-	echo "Password command exit code: $PW_RC"
-	echo "Password command output: $PW_OUTPUT"
-	if [ $PW_RC -ne 0 ]; then
-		echo "WARNING: Failed to set admin password. Check the output above."
-	fi
+		# Change the admin password only if a non-default password was provided
+		echo "Setting admin password to configured value"
+		PW_OUTPUT=$(su -c "gvmd --disable-password-policy --user=\"$USERNAME\" --new-password=\"$PASSWORD\" " gvm 2>&1)
+		PW_RC=$?
+		echo "Password command exit code: $PW_RC"
+		echo "Password command output: $PW_OUTPUT"
+		if [ $PW_RC -ne 0 ]; then
+			echo "WARNING: Failed to set admin password. Check the output above."
+		fi
+		# Verify the password actually works by testing GMP auth
+		# If gvmd --new-password succeeds but the hash doesn't match during
+		# gsad's authenticate flow, we need to recreate the user.
+		# Test via gvm-cli (which uses a different auth code path than gsad)
+		HC_TEST_CFG=$(mktemp)
+		cat > "$HC_TEST_CFG" << 'HEREDOC'
+[main]
+timeout=60
+[gmp]
+HEREDOC
+		printf 'username=%s\n' "$USERNAME" >> "$HC_TEST_CFG"
+		printf 'password=%s\n' "$PASSWORD" >> "$HC_TEST_CFG"
+		chmod 0600 "$HC_TEST_CFG"
+		if ! su -c "gvm-cli --config \"$HC_TEST_CFG\" socket --socketpath /run/gvmd/gvmd.sock --xml '<get_version/>' 2>/dev/null | grep -q 'status=\"200\"'" gvm; then
+			echo "WARNING: Password change succeeded but GMP auth failed."
+			echo "This indicates a hash incompatibility. Recreating admin user..."
+			# Delete and recreate the admin user to force a clean password hash
+			ADMINUUID=$(su -c "gvmd --get-users --verbose | awk '/^admin /{print \$2}'" gvm 2>/dev/null || true)
+			if [ -n "$ADMINUUID" ]; then
+				su -c "gvmd --delete-user=admin" gvm 2>/dev/null || true
+			fi
+			su -c "gvmd --role=\"Super Admin\" --create-user=\"$USERNAME\" --password=\"$PASSWORD\"" gvm
+			ADMINUUID=$(su -c "gvmd --get-users --verbose | awk '/^admin /{print \$2}'" gvm)
+			if [ -n "$ADMINUUID" ]; then
+				su -c "gvmd --modify-setting 78eceaec-3385-11ea-b237-28d24461215b --value $ADMINUUID" gvm
+			fi
+			echo "Admin user recreated with fresh password hash."
+		fi
+		rm -f "$HC_TEST_CFG"
 elif [ "$USERNAME" == "admin" ] ; then
 	# Both USERNAME and PASSWORD are "admin" (defaults).
 	# Upstream behavior: do NOT reset the password on every restart.
