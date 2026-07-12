@@ -514,6 +514,22 @@ done
 chgrp gvm /var/run/ospd/ospd.sock
 chgrp gvm /var/run/ospd/ospd-openvas.sock
 
+# Make sure the gvmd socket exists before starting gsad
+# gvmd was started earlier in the background; wait for its socket
+echo "Waiting for gvmd socket..."
+GVMD_SOCKET_WAIT=0
+while [ $GVMD_SOCKET_WAIT -lt 30 ]; do
+	if [ -S /run/gvmd/gvmd.sock ]; then
+		echo "gvmd socket ready"
+		break
+	fi
+	sleep 1
+	GVMD_SOCKET_WAIT=$((GVMD_SOCKET_WAIT + 1))
+done
+if [ $GVMD_SOCKET_WAIT -ge 30 ]; then
+	echo "WARNING: gvmd socket not found after 30s, continuing anyway"
+fi
+
 if [ $SKIPGSAD == "false" ]; then
 	echo "Starting Greenbone Security Assistant..."
 	#su -c "gsad --verbose --http-only --no-redirect --port=9392" gvm
