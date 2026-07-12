@@ -390,14 +390,14 @@ echo "Starting ospd-openvas"
 	--disable-notus-hashsum-verification true &
 
 echo "Starting Greenbone Vulnerability Manager..."
-su -c "gvmd --listen-group=gvm  \
-				--osp-vt-update=/var/run/ospd/ospd-openvas.sock \
-				--max-email-attachment-size=64000000 \
-				--max-email-include-size=64000000 \
-				--max-email-message-size=64000000 \
-				--broker-address='' \
-				--unix-socket=/run/gvmd/gvmd.sock \
-				\"$GVMD_ARGS\"" gvm
+su -c "gvmd -a 0.0.0.0 -p 9390 --listen-group=gvm  \
+					--osp-vt-update=/var/run/ospd/ospd-openvas.sock \
+					--max-email-attachment-size=64000000 \
+					--max-email-include-size=64000000 \
+					--max-email-message-size=64000000 \
+					--broker-address='' \
+					--unix-socket=/run/gvmd/gvmd.sock \
+					\"$GVMD_ARGS\"" gvm
 
 
 until su -c "gvmd --get-users" gvm; do
@@ -412,7 +412,6 @@ fi
 echo "Time to fixup the gvm accounts."
 
 if [ $CREATE_EMPTY_DATABASE = "true" ]; then
-	# Fresh empty database - create admin user
 	echo "Creating Greenbone Vulnerability Manager admin user $USERNAME"
 	su -c "gvmd --role=\"Super Admin\" --create-user=\"$USERNAME\" --password=\"$PASSWORD\"" gvm
 	echo "admin user created"
@@ -420,34 +419,6 @@ if [ $CREATE_EMPTY_DATABASE = "true" ]; then
 	echo "admin user UUID is $ADMINUUID"
 	echo "Granting admin access to defaults"
 	su -c "gvmd --modify-setting 78eceaec-3385-11ea-b237-28d24461215b --value $ADMINUUID" gvm
-elif [ "$USERNAME" == "admin" ] && [ "$PASSWORD" != "admin" ] ; then
-		# Change the admin password only if a non-default password was provided
-		echo "Setting admin password to configured value"
-		PW_OUTPUT=$(su -c "gvmd --disable-password-policy --user=\"$USERNAME\" --new-password=\"$PASSWORD\" " gvm 2>&1)
-		PW_RC=$?
-		echo "Password command exit code: $PW_RC"
-		echo "Password command output: $PW_OUTPUT"
-elif [ "$USERNAME" == "admin" ] ; then
-	# Both USERNAME and PASSWORD are "admin" (defaults).
-	# Upstream behavior: do NOT reset the password on every restart.
-	# The admin user keeps whatever password is already in the DB.
-	# If login is broken, the user should set PASSWORD env var to a non-default value.
-	echo "Both USERNAME and PASSWORD are default (admin). Skipping password reset."
-	echo "Set PASSWORD env var to a non-default value to force a password change."
-elif [ "$USERNAME" != "admin" ] ; then
-	# create user and set password
-	echo "Creating new user $USERNAME with supplied password."
-	echo "If no password supplied on startup, then the default password is admin"
-	echo " ...... Don't do that ..... "
-	echo "Creating Greenbone Vulnerability Manager admin user as $USERNAME"
-	su -c "gvmd --role=\"Super Admin\" --create-user=\"$USERNAME\" --password=\"$PASSWORD\"" gvm
-	echo "admin user created"
-	ADMINUUID=$(su -c "gvmd --get-users --verbose | awk /$USERNAME/'{print \$2}' " gvm)
-	echo "admin user UUID is $ADMINUUID"
-	echo "Granting admin access to defaults"
-	su -c "gvmd --modify-setting 78eceaec-3385-11ea-b237-28d24461215b --value $ADMINUUID" gvm
-	# Now ... we need to remove the "admin" account ...
-	su -c "gvmd --delete-user=admin" gvm
 fi
 
 # Check to see if the HealthCheck user exists. If not, create it and set a new random password.
