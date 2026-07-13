@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-echo "Starting script"
+echo "Starting script" 
 set -euo pipefail
 
 # --------------------------------------------------------------------
@@ -8,7 +8,7 @@ set -euo pipefail
 # Creates/maintains a least-privilege GVM/GVMD user for container
 # health checks over the gvmd Unix socket.
 # --------------------------------------------------------------------
-echo "Variable setup"
+echo "Variable setup" 
 GVMD_SOCKET="${GVMD_SOCKET:-/run/gvmd/gvmd.sock}"
 
 GVM_ADMIN_USER="${GVM_ADMIN_USER:-admin}"
@@ -27,7 +27,7 @@ GVM_HEALTH_SETUP_SLEEP="${GVM_HEALTH_SETUP_SLEEP:-5}"
 
 ADMIN_CFG=""
 HEALTH_CFG=""
-echo "Setup some functions"
+echo "Setup some functions" 
 
 cleanup() {
   [ -n "${ADMIN_CFG:-}" ] && [ -f "$ADMIN_CFG" ] && rm -f "$ADMIN_CFG"
@@ -50,11 +50,9 @@ make_gvm_cli_auth_config() {
   local cfg="$3"
 
   {
-    printf '[main]\n'
-    printf 'timeout=60\n'
-    printf '[gmp]\n'
-    printf 'username=%s\n' "$user"
-    printf 'password=%s\n' "$pass"
+    printf '[Auth]\n'
+    printf 'gmp_username=%s\n' "$user"
+    printf 'gmp_password=%s\n' "$pass"
   } > "$cfg"
 
   chmod 0600 "$cfg"
@@ -74,22 +72,17 @@ random_password_19() {
 
 write_health_password_file() {
   local pass="$1"
-  # Write directly to the existing file instead of mv (avoids /etc/ dir perm issue)
-  # The file is pre-created and owned by gvm:gvm from single.sh
-  printf '%s\n' "$pass" > "$GVM_HEALTH_PASS_FILE" 2>/dev/null || {
-    # Fallback: try with tee if direct write fails
-    printf '%s\n' "$pass" | tee "$GVM_HEALTH_PASS_FILE" > /dev/null 2>&1 || true
-  }
-  # Verify the file was written
-  if [ -s "$GVM_HEALTH_PASS_FILE" ]; then
-    echo "Healthcheck password written successfully to $GVM_HEALTH_PASS_FILE"
-  else
-    echo "WARNING: Failed to write healthcheck password to $GVM_HEALTH_PASS_FILE" >&2
-    # Last resort: use dd to write
-    dd status=none of="$GVM_HEALTH_PASS_FILE" <<< "$pass" 2>/dev/null || true
-    chown "$GVM_LOCAL_USER:$GVM_LOCAL_GROUP" "$GVM_HEALTH_PASS_FILE" 2>/dev/null || true
-    chmod 0600 "$GVM_HEALTH_PASS_FILE" 2>/dev/null || true
-  fi
+  local tmpfile
+
+  tmpfile="$(mktemp)"
+
+  printf '%s\n' "$pass" > "$tmpfile"
+  chown "$GVM_LOCAL_USER:$GVM_LOCAL_GROUP" "$tmpfile"
+  chmod 0600 "$tmpfile"
+  mv "$tmpfile" "$GVM_HEALTH_PASS_FILE"
+
+  chown "$GVM_LOCAL_USER:$GVM_LOCAL_GROUP" "$GVM_HEALTH_PASS_FILE"
+  chmod 0600 "$GVM_HEALTH_PASS_FILE"
 }
 
 gmp_admin() {
@@ -283,7 +276,7 @@ echo "Creating gvm auth config"
 ADMIN_CFG="$(mktemp)"
 make_gvm_cli_auth_config "$GVM_ADMIN_USER" "$GVM_ADMIN_PASS" "$ADMIN_CFG"
 
-echo "Waiting for GMP"
+echo "Waiting for GMP" 
 wait_for_gvmd_gmp
 
 echo "Checking for healthcheck user"

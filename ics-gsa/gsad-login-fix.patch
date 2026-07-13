@@ -1,0 +1,25 @@
+--- a/src/gsad_http_handler_functions.c
++++ b/src/gsad_http_handler_functions.c
++++ /tmp/gsad_http_patched.c	2026-07-14 00:37:41.779854529 +0600
+@@ -282,6 +282,21 @@
+ 
+   const gchar *url = gsad_connection_info_get_url (con_info);
+ 
++  /* GSA v27.4.1 sends login requests to /gmp?cmd=login instead of /login.
++   * Allow these to proceed without a session token so the GMP handler
++   * can process the login via authenticate_gmp. */
++  if (ret == USER_BAD_MISSING_TOKEN)
++    {
++      params_t *params = gsad_connection_info_get_params (con_info);
++      const char *cmd = params_value (params, "cmd");
++      if (cmd && (strcasecmp (cmd, "login") == 0))
++        {
++          g_debug ("Bypassing session check for /gmp?cmd=login");
++          return gsad_http_handler_call (handler_next, connection, con_info,
++                                         NULL);
++        }
++    }
++
+   if ((ret == USER_EXPIRED_TOKEN) || (ret == USER_BAD_MISSING_COOKIE)
+       || (ret == USER_BAD_MISSING_TOKEN) || (ret == USER_IP_ADDRESS_MISSMATCH))
+     {

@@ -15,14 +15,9 @@ cd /build/*/
 # Implement ICS GSA Mods
 BUILDDIR=$(pwd)
 echo "BUILDDIR $BUILDDIR"
+patch -p1 < /ics-gsa/gsad-login-fix.patch
 
-# Apply login fix patch: GSA v27.4.1 sends login to /gmp?cmd=login
-# gsad requires session token for /gmp, but login has no session.
-# This patch allows /gmp?cmd=login without a session.
-echo "Applying gsad-login-fix.patch..."
-patch -p1 < /ics-gsa/gsad-login-fix.patch 2>/dev/null || echo "Note: patch may not apply cleanly, continuing..."
-
-/ics-gsa/scripts/gsad-mods.sh $BUILDDIR
+#/ics-gsa/scripts/gsad-mods.sh $BUILDDIR
 
 cmake /build/gsad-$GSAD_VERSION \
 	-DCMAKE_INSTALL_PREFIX=$INSTALL_PREFIX \
@@ -33,6 +28,7 @@ cmake /build/gsad-$GSAD_VERSION \
 	-DGSAD_RUN_DIR=/run/gsad \
 	-DLOGROTATE_DIR=/etc/logrotate.d
 
-make install
+DESTDIR=/artifacts make install
+
 cd /build
 rm -rf *

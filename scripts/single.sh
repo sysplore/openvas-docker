@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 MODE="$1"
-#Define  proper shutdown
+#Define  proper shutdown 
 cleanup() {
 	echo "Container stopped, performing shutdown"
 	echo "#################################"
@@ -14,7 +14,7 @@ cleanup() {
 	sleep 1
 	echo "Stopping postgresql"
     su -c "/usr/lib/postgresql/${PGVER}/bin/pg_ctl -D /data/database stop" postgres
-
+	
 }
 
 #Trap SIGTERM
@@ -47,7 +47,7 @@ if [ $GVMD_ARGS == "blank" ]; then
 	GVMD_ARGS='--'
 fi
 if [ "$DEBUG" == "true" ]; then
-	for var in USERNAME PASSWORD RELAYHOST SMTPPORT REDISDBS QUIET CREATE_EMPTY_DATABASE SKIPSYNC RESTORE DEBUG HTTPS GSATIMEOUT SKIPGSAD; do
+	for var in USERNAME PASSWORD RELAYHOST SMTPPORT REDISDBS QUIET CREATE_EMPTY_DATABASE SKIPSYNC RESTORE DEBUG HTTPS GSATIMEOUT SKIPGSAD; do 
 		echo "$var = ${var}"
 	done
 fi
@@ -61,7 +61,7 @@ function DBCheck {
         fi
 }
 
-# Make sure the gvmd.pid is not there to ensure healthcheck doesn't start early.
+# Make sure the gvmd.pid is not there to ensure healthcheck doesn't start early. 
 rm -f /run/gvmd/gvmd.pid
 rm -f /running
 
@@ -72,7 +72,7 @@ redis-server --unixsocket /run/redis/redis.sock --unixsocketperm 777 \
 
 echo "Wait for redis socket to be created..."
 while  [ ! -S /run/redis/redis.sock ]; do
-        sleep 1
+       sleep 1
 done
 
 echo "Testing redis status..."
@@ -86,61 +86,35 @@ echo "Redis ready."
 
 # Postgres config should be tighter.
 if [ ! -f "/setup" ]; then
-	echo "Creating postgresql.conf and pg_hba.conf"
-	# Create conf.d directory if it doesn't exist
-	mkdir -p /data/database/conf.d
-	# Need to look at restricting this. Maybe to localhost ?
-	echo "listen_addresses = '*'" > /data/database/postgresql.conf
-	echo "port = 5432" >> /data/database/postgresql.conf
-	echo "log_destination = 'stderr'" >> /data/database/postgresql.conf
-	echo "logging_collector = on" >> /data/database/postgresql.conf
-	echo "log_directory = '/data/var-log/postgresql/'" >> /data/database/postgresql.conf
-	echo "log_filename = 'postgresql-gvmd.log'" >> /data/database/postgresql.conf
-	echo "log_file_mode = 0666" >> /data/database/postgresql.conf
-	echo "log_truncate_on_rotation = off" >> /data/database/postgresql.conf
-	echo "log_line_prefix = '%m [%p] %q%u@%d '" >> /data/database/postgresql.conf
-	echo "log_timezone = 'Etc/UTC'" >> /data/database/postgresql.conf
-	# This probably tooooo open.
-	echo -e "host\tall\tall\t0.0.0.0/0\tmd5" > /data/database/pg_hba.conf
-	echo -e "host\tall\tall\t::0/0\tmd5" >> /data/database/pg_hba.conf
-	echo -e "local\tall\tall\ttrust"  >> /data/database/pg_hba.conf
 	chown postgres:postgres -R /data/database
-	touch /setup
 fi
 PGFAIL=0
 PGUPFAIL=0
-# Clean up stale PostgreSQL lock files from previous unclean shutdowns
-if [ -f /data/database/postmaster.pid ]; then
-	PID=$(head -1 /data/database/postmaster.pid 2>/dev/null || echo 0)
-	if [ -n "$PID" ] && [ "$PID" != "0" ] && ! kill -0 "$PID" 2>/dev/null; then
-		echo "Removing stale PostgreSQL lock file (PID $PID not running)"
-		rm -f /data/database/postmaster.pid
-		rm -f /data/database/postmaster.opts
-	fi
-fi
-if [ -f /var/run/postgresql/.s.PGSQL.5432.lock ]; then
-	rm -f /var/run/postgresql/.s.PGSQL.5432.lock
-fi
-echo "Starting PostgreSQL (with long timeout for crash recovery)..."
-su -c "/usr/lib/postgresql/${PGVER}/bin/pg_ctl -D /data/database -t 120 start" postgres || PGFAIL=$?
-echo "pg exit with $PGFAIL ."
+INITFAIL=0
+echo "Starting PostgreSQL..."
+# if ! [ -d /data/database/base ]; then
+# 	ls -l /data/database
+# 	echo "Looks like there is no initial DB"
+# 	echo "Initializing /data/database for postgresql use."
+# 	su -c "/usr/lib/postgresql/${PGVER}/bin/initdb -D /data/database" postgres || INITFAIL=$?
+# 	if [ $INITFAIL -ne 0 ]; then
+# 		echo "Looks like databse init failed. \"$INITFAIL\" Bailing out."
+# 		exit
+# 	fi
+# fi
+su -c "/usr/lib/postgresql/${PGVER}/bin/pg_ctl -D /data/database start" postgres || PGFAIL=$?
+echo "pg exit with $PGFAIL ." 
 if [ $PGFAIL -ne 0 ]; then
 	echo "It looks like postgres failed to start. ( Exit code: \"$?\" "
 	echo "Assuming this is due to different database version and starting upgrade."
-	/scripts/db-upgrade.sh || PGUPFAIL=$?
+	#/scripts/db-upgrade.sh || PGUPFAIL=$?
+	/scripts/pg13-2-15.sh || PGUPFAIL=$?
 	if [ $PGUPFAIL -ne 0 ]; then
 		echo "Looks like this is either not an upgrade problem, or the upgrade failed."
 		exit
 	else
-		echo " DB Upgrade was a success. Postgresql $PGVER should be running."
-		echo "Waiting for PostgreSQL to be ready..."
-		for i in $(seq 1 30); do
-			if su -c "pg_isready -U postgres" postgres 2>/dev/null | grep -q "accepting connections"; then
-				echo "PostgreSQL is ready after upgrade."
-				break
-			fi
-			sleep 2
-		done
+		echo " DB Upgrade was a success. Starting postgresql $PGVER"
+		su -c "/usr/lib/postgresql/${PGVER}/bin/pg_ctl -D /data/database start" postgres
 	fi
 fi
 echo "Checking for existing DB"
@@ -154,23 +128,21 @@ echo "Running first start configuration..."
 
 if ! [ -f /data/var-lib/gvm/private/CA/cakey.pem ]; then
 	echo "Generating certs..."
-    	su -c "gvm-manage-certs -afv" gvm
+    	su -c "/usr/local/bin/gvm-manage-certs -afv" gvm 
 fi
 # if there is no existing DB, and there is no base db archive, then we need to create a new DB.
-if [ $(DBCheck) -eq 0 ] && ( ! [ -f /usr/lib/gvmd.sql.xz ] || [ $(stat -c%s /usr/lib/gvmd.sql.xz 2>/dev/null || echo 0) -lt 100 ] ); then
+if [ $(DBCheck) -eq 0 ] && ! [ -f /usr/lib/gvmd.sql.xz ]; then
 		echo "Looks like we need to create an empty databse."
 		CREATE_EMPTY_DATABASE="true"
-		    # Set SKIPSYNC to false so we pull new feeds (unless user explicitly set it to true)
-		    if [ "$SKIPSYNC" != "true" ]; then
-		        SKIPSYNC="false"
-		    fi
-		    # Set LOADDEFAULT to false because we don't have the DB.
+		# Set SKIPSYNC to false so we pull new feeds
+		SKIPSYNC="false"
+		# Set LOADDEFAULT to false because we don't have the DB.
 		LOADDEFAULT="false"
 fi
 echo -e "CREATE_EMPTY_DATABASE=$CREATE_EMPTY_DATABASE\nLOADDEFAULT=$LOADDEFAULT"
 
 # Here we load the DB from the image, but only if there is a DB file on the image.
-if [ $LOADDEFAULT = "true" ] && [ $CREATE_EMPTY_DATABASE = "false" ] && [ $(stat -c%s /usr/lib/gvmd.sql.xz 2>/dev/null || echo 0) -ge 100 ] ; then
+if [ $LOADDEFAULT = "true" ] && [ $CREATE_EMPTY_DATABASE = "false" ] ; then
 	echo "########################################"
 	echo "Creating a base DB from /usr/lib/base-db.xz"
 	echo "########################################"
@@ -178,7 +150,7 @@ if [ $LOADDEFAULT = "true" ] && [ $CREATE_EMPTY_DATABASE = "false" ] && [ $(stat
 	#xzcat /usr/lib/base.sql.xz | grep -v "CREATE ROLE postgres" > /data/base-db.sql
 	xzcat /usr/lib/globals.sql.xz  | grep -v "CREATE ROLE postgres" > /data/globals.sql
 	xzcat /usr/lib/gvmd.sql.xz  > /data/gvmd.sql
-	# the dump is putting this command in the backup even though the value is null.
+	# the dump is putting this command in the backup even though the value is null. 
 	# this causes errors on start up as with the value as a null, it looks like a syntax error.
 	# removing it here, but only if it exists as a null. If in the future, this is not null, it should remain.
 	if grep -qs "^CREATE AGGREGATE public\.group_concat()" /data/base-db.sql; then
@@ -194,21 +166,21 @@ if [ $LOADDEFAULT = "true" ] && [ $CREATE_EMPTY_DATABASE = "false" ] && [ $(stat
 	echo "Restoring gvmd database."
 	su -c "/usr/lib/postgresql/${PGVER}/bin/pg_restore  -d gvmd -j 4 /data/gvmd.sql" postgres  > /usr/local/var/log/db-restore.log
 	rm /data/gvmd.sql
-	cd /data
+	cd /data 
 	echo "Unpacking base feeds data from /usr/lib/var-lib.tar.xz"
 	tar xf /usr/lib/var-lib.tar.xz
 	echo "Base DB and feeds collected on:"
 	cat /data/var-lib/update.ts
-	# Store the date of the Feeds archive for later start ups.
-	stat -c %Y  /data/var-lib/update.ts  > /data/var-lib/FeedDate
+	# Store the date of the Feeds archive for later start ups. 
+	stat -c %Y  /data/var-lib/update.ts  > /data/var-lib/FeedDate 
 fi
 
-# If CREATE_EMPTY_DATABASE is true, then we need to create an empty database.
+# If CREATE_EMPTY_DATABASE is true, then we need to create an empty database. 
 if [ $CREATE_EMPTY_DATABASE = "true" ]; then
 	if [ $(DBCheck) -eq 1 ]; then
 		echo " It looks like there is already a gvmd database."
 		echo " Failing out to prevent overwriting the existing DB"
-		exit
+		exit 1
 	fi
 	echo "Creating Greenbone Vulnerability Manager database"
 	su -c "createuser -DRS gvm" postgres
@@ -220,14 +192,14 @@ if [ $CREATE_EMPTY_DATABASE = "true" ]; then
 	chown postgres:postgres -R /data/database
 	su -c "/usr/lib/postgresql/${PGVER}/bin/pg_ctl -D /data/database restart" postgres
 
-	su -c "gvm-manage-certs -V" gvm
+	su -c "gvm-manage-certs -V" gvm 
 	NOCERTS=$?
 	while [ $NOCERTS -ne 0 ] ; do
 		su -c "gvm-manage-certs -vaf " gvm
-		su -c "gvm-manage-certs -V " gvm
+		su -c "gvm-manage-certs -V " gvm 
 		NOCERTS=$?
 	done
-
+ --rebuild-gvmd-data=report_formats
 
 fi
 # if RESTORE is true, hopefully the user has mounted thier database in the right place.
@@ -239,28 +211,20 @@ if [ $RESTORE = "true" ] ; then
 		echo "You have set the RESTORE env varible to true, but there is no db to restore from."
 		echo "Make sure you include \" -v <path to your backup.sql>:/usr/lib/db-backup.sql\""
 		echo "on the command line to start the container."
-		exit
+		exit 1
 	fi
 	touch /usr/local/var/log/restore.log
         chown postgres /usr/lib/db-backup.sql
-	echo "DROP DATABASE IF EXISTS gvmd" > /tmp/dropdb.sql
+	echo "DROP DATABASE IF EXISTS gvmd" > /tmp/dropdb.sql 
 	su -c "/usr/lib/postgresql/${PGVER}/bin/psql < /tmp/dropdb.sql" postgres &> /usr/local/var/log/restore.log
         su -c "/usr/lib/postgresql/${PGVER}/bin/psql < /usr/lib/db-backup.sql " postgres &>> /usr/local/var/log/restore.log
 	echo "Rebuilding report formats"
 	su -c "gvmd --rebuild-gvmd-data=report_formats" gvm
 	su -c "/usr/lib/postgresql/${PGVER}/bin/pg_ctl -D /data/database stop" postgres
-	echo " Your database backup from /usr/lib/db-backup.sql has been restored."
+	echo " Your database backup from /usr/lib/db-backup.sql has been restored." 
 	echo " You should NOT keep the container running with the RESTORE env var set"
-	echo " as a restart of the container will overwrite the database again."
+	echo " as a restart of the container will overwrite the database again." 
 	exit
-fi
-
- #This is likely no longer needed.
-if [ ! -d /usr/local/var/lib/gvm/data-objects/gvmd/21.04/report_formats ]; then
- 	echo "Creating dir structure for feed sync"
- 	for dir in configs port_lists report_formats; do
- 		su -c "mkdir -p /usr/local/var/lib/gvm/data-objects/gvmd/21.04/${dir}" gvm
- 	done
 fi
 
 
@@ -269,38 +233,11 @@ if [ "$DEBUG" == "true" ]; then
 	echo "Sleeping here for 1d to debug"
 	sleep 1d
 fi
-
-# IF the GVMd database version is less than 250, then we must be on version 21.4.
-# So we need to grok the database or the migration will fail. . . .
-# We also look for a failed sync at startup on a slim image here because that wil cause
-# the psql command to fail and crash the container.
-if [ "$CREATE_EMPTY_DATABASE" == "false" ] && ! [ -f /data/feed-syncing ]; then
-	echo "Checking DB Version"
-	DB=$(su -c "psql -tq --username=postgres --dbname=gvmd --command=\"select value from meta where name like 'database_version';\"" postgres 2>/dev/null || echo "0")
-	# If query returns empty or fails, default to 0
-	if [ -z "$DB" ]; then
-		DB=0
-	fi
-else
-	DB=250
-fi
-
-echo "Current GVMd database version is $DB"
-if [ $DB -lt 250 ]; then
-	date
-	echo "Groking the database so migration won't fail"
-	echo "This could take a while. (10-15 minutes). "
-	su -c "/usr/lib/postgresql/${PGVER}/bin/psql gvmd < /scripts/21.4-to-22.4-prep.sql" postgres >> /usr/local/var/log/db-restore.log
-	date
-	echo "Grock complete."
-	echo "Now the long part, migrating the databse."
-	su -c "gvmd --migrate" gvm
-	echo "Migration complete!!"
-	date
-elif [ "$CREATE_EMPTY_DATABASE" == "false"  ]; then
-	#chown -R gvm:gvm /data/var-lib/gvm
+if [ "$CREATE_EMPTY_DATABASE" == "false"  ]; then
 	echo "Migrate the database if needed."
-	su -c "gvmd --migrate" gvm
+	# ps auxw | grep gvmd
+	# pkill -KILL gvmd || true # damn healthcheck
+	su -c "gvmd --migrate" gvm 
 fi
 
 
@@ -317,9 +254,9 @@ if [ $SKIPSYNC == "false" ]; then
 		echo "Checking age of current data feeds from Greenbone."
 		ImageFeeds=$(stat -c %Y /usr/lib/var-lib.tar.xz)
 		echo "ImageFeeds=$ImageFeeds"
-		if [ -f /data/var-lib/FeedDate ]; then
+		if [ -f /data/var-lib/FeedDate ]; then 
 			InstalledFeeds=$(cat /data/var-lib/FeedDate)
-
+			
 		else
 			InstalledFeeds=0
 		fi
@@ -330,10 +267,10 @@ if [ $SKIPSYNC == "false" ]; then
 			tar xf /usr/lib/var-lib.tar.xz
 			# Replace the FeedDate with date from the Image feeds.
 			# This prevents it from extracting the archive everytime the image restarts.
-			echo "$ImageFeeds" > /data/var-lib/FeedDate
+			echo "$ImageFeeds" > /data/var-lib/FeedDate 
 		fi
 	fi
-
+	   
    # This will make the feed syncs a little quieter
    # We touch a file here to note that the sync was started
    # Then remove it after sync is complete.
@@ -342,18 +279,18 @@ if [ $SKIPSYNC == "false" ]; then
    if [ $QUIET == "TRUE" ] || [ $QUIET == "true" ]; then
 	   echo " Fine, ... we'll be quiet, but we warn you if there are errors"
 	   echo " syncing the feeds, you'll miss them."
-	   echo "Syncing all feeds from GB"
-	   /scripts/sync.sh --quiet
+	   echo "Syncing all feeds from GB" 
+	   /scripts/sync.sh --quiet 
    else
-	   echo "Syncing all feeds from GB"
+	   echo "Syncing all feeds from GB" 
 	   /scripts/sync.sh
    fi
    # if the feed-sync fails, the container will exit and this will not be run.
    rm /data/feed-syncing
 fi
 
-# This works for now, but needs to move to the "confs"
-mkdir -p /etc/openvas
+# This works for now, but needs to move to the "confs" 
+mkdir -p /etc/openvas 
 cat >/etc/openvas/openvas.conf <<'EOF'
 table_driven_lsc = yes
 openvasd_server = http://127.0.0.1:3000
@@ -388,16 +325,41 @@ echo "Starting ospd-openvas"
 	--socket-mode 0o770 \
 	--notus-feed-dir /var/lib/notus/advisories \
 	--disable-notus-hashsum-verification true &
+echo "Waiting for ospd socket"
+while ! [ -S /var/run/ospd/ospd-openvas.sock ]; do
+	sleep 1
+done
+ls -l  /var/run/ospd/ospd-openvas.sock 
 
-echo "Starting Greenbone Vulnerability Manager..."
-su -c "gvmd -a 0.0.0.0 -p 9390 --listen-group=gvm  \
-					--osp-vt-update=/var/run/ospd/ospd-openvas.sock \
-					--max-email-attachment-size=64000000 \
-					--max-email-include-size=64000000 \
-					--max-email-message-size=64000000 \
-					--broker-address='' \
-					--unix-socket=/run/gvmd/gvmd.sock \
-					\"$GVMD_ARGS\"" gvm
+# Ensure gvmd can read from the ospd socket.
+chown gvm:gvm /var/run/ospd/ospd-openvas.sock
+ls -l  /var/run/ospd/ospd-openvas.sock 
+
+# Just incase the boot took too long and there are already gvmd procs running from healthcheck
+
+# GVMSTATUS=1
+# STARTCOUNT=0
+# while [ $GVMSTATUS -ne 0 ] && [ $STARTCOUNT -lt 2 ]; do
+# 	pkill gvmd || true
+# 	sleep 1
+# 	pkill gvmd || true
+	echo "Starting Greenbone Vulnerability Manager..."
+	su -c "gvmd --listen-group=gvm  \
+				su -c "gvmd --listen-group=gvm  \
+									--osp-vt-update=/var/run/ospd/ospd-openvas.sock \
+									--max-email-attachment-size=64000000 \
+									--max-email-include-size=64000000 \
+									--max-email-message-size=64000000 \
+									--broker-address='' \
+									--unix-socket=/run/gvmd/gvmd.sock \
+									\"$GVMD_ARGS\"" gvm
+# 	GVMSTATUS="$?"
+	
+# 	STARTCOUNT=$(( $STARTCOUNT + 1 ))
+# 	echo -e "GVMSTATUS = $GVMSTATUS\n\tSTARTCOUNT = $STARTCOUNT\n"
+# done
+
+
 
 
 until su -c "gvmd --get-users" gvm; do
@@ -406,12 +368,31 @@ until su -c "gvmd --get-users" gvm; do
 done
 
 if ! [ -L /var/run/ospd/ospd.sock ]; then
-	ln -s /var/run/ospd/ospd-openvas.sock /var/run/ospd/ospd.sock
+	ln -s /var/run/ospd/ospd-openvas.sock /var/run/ospd/ospd.sock 
 fi
 
 echo "Time to fixup the gvm accounts."
 
-if [ $CREATE_EMPTY_DATABASE = "true" ]; then
+
+if [ "$USERNAME" == "admin" ] && [ "$PASSWORD" != "admin" ] ; then
+	# Change the admin password
+	echo "Setting admin password"
+	su -c "gvmd --user=\"$USERNAME\" --new-password=\"$PASSWORD\" " gvm  
+elif [ "$USERNAME" != "admin" ] ; then 
+	# create user and set password
+	echo "Creating new user $USERNAME with supplied password."
+	echo "If no password supplied on startup, then the default password is admin" 
+	echo " ...... Don't do that ..... "
+	echo "Creating Greenbone Vulnerability Manager admin user as $USERNAME"
+	su -c "gvmd --role=\"Super Admin\" --create-user=\"$USERNAME\" --password=\"$PASSWORD\"" gvm
+	echo "admin user created"
+	ADMINUUID=$(su -c "gvmd --get-users --verbose | awk /$USERNAME/'{print \$2}' " gvm)
+	echo "admin user UUID is $ADMINUUID"
+	echo "Granting admin access to defaults"
+	su -c "gvmd --modify-setting 78eceaec-3385-11ea-b237-28d24461215b --value $ADMINUUID" gvm
+	# Now ... we need to remove the "admin" account ...
+	su -c "gvmd --delete-user=admin" gvm 
+elif [ $CREATE_EMPTY_DATABASE = "true" ]; then
 	echo "Creating Greenbone Vulnerability Manager admin user $USERNAME"
 	su -c "gvmd --role=\"Super Admin\" --create-user=\"$USERNAME\" --password=\"$PASSWORD\"" gvm
 	echo "admin user created"
@@ -420,21 +401,19 @@ if [ $CREATE_EMPTY_DATABASE = "true" ]; then
 	echo "Granting admin access to defaults"
 	su -c "gvmd --modify-setting 78eceaec-3385-11ea-b237-28d24461215b --value $ADMINUUID" gvm
 fi
-
 # Check to see if the HealthCheck user exists. If not, create it and set a new random password.
 echo "Checking for/creating healthcheck user."
-touch /etc/healthcheck.pass
+touch /etc/healthcheck.pass 
 chown gvm:gvm /etc/healthcheck.pass
 chmod 600 /etc/healthcheck.pass
 su -c "/scripts/create-hc-user.sh \"$PASSWORD\"" gvm  || true
 
-echo "resetting pipefail"
-set -Eeuo pipefail
+
 touch /setup
 
 # Set number of lines in reports
 echo " set Report Lines to $REPORT_LINES"
-su -c "gvmd --modify-setting 76374a7a-0569-11e6-b6da-28d24461215b --value=$REPORT_LINES" gvm
+su -c "gvmd --modify-setting 76374a7a-0569-11e6-b6da-28d24461215b --value=$REPORT_LINES" gvm 
 
 # If this exists ...
 if [ -f /var/run/ospd.pid ]; then
@@ -456,85 +435,32 @@ smtp_tls_protocols = !SSLv2, !SSLv3, !TLSv1, !TLSv1.1" >> /etc/postfix/main.cf
 #/usr/lib/postfix/sbin/master -w
 service postfix start
 
-# Prep the gpg keys
-# export OPENVAS_GNUPG_HOME=/etc/openvas/gnupg
-# export GNUPGHOME=/etc/openvas-gnupg
-# if ! [ -f /etc/GBCommunitySigningKey.asc ]; then
-# 	echo " Get the Greenbone public Key"
-# 	#curl -f -L https://www.greenbone.net/GBCommunitySigningKey.asc -o /etc/GBCommunitySigningKey.asc
-# 	#echo "8AE4BE429B60A59B311C2E739823FAA60ED1E580:6:" > /etc/ownertrust.txt
-# 	echo "Setup environment"
-# 	mkdir -m 0600 -p $GNUPGHOME $OPENVAS_GNUPG_HOME
-# 	echo "Import the key "
-# 	gpg --import /etc/GBCommunitySigningKey.asc
-# 	gpg --import-ownertrust < /etc/ownertrust.txt
-# 	echo "Setup key for openvas .."
-# 	cp -vr /etc/openvas-gnupg/* $OPENVAS_GNUPG_HOME/
-# 	chown -R gvm:gvm $OPENVAS_GNUPG_HOME
-# fi
 
-
-
-# wait for ospd to start by looking for the socket creation.
-while [ ! -S /var/run/ospd/ospd.sock ] || [ ! -S /var/run/ospd/ospd-openvas.sock ]; do
-	sleep 1
-done
 
 # We run ospd-openvas in the container as root. This way we don't need sudo.
 # But if we leave the socket owned by root, gvmd can not communicate with it.
 chgrp gvm /var/run/ospd/ospd.sock
-chgrp gvm /var/run/ospd/ospd-openvas.sock
-
-# Make sure the gvmd socket exists before starting gsad
-# gvmd was started earlier in the background; wait for its socket
-echo "Waiting for gvmd socket..."
-GVMD_SOCKET_WAIT=0
-while [ $GVMD_SOCKET_WAIT -lt 30 ]; do
-	if [ -S /run/gvmd/gvmd.sock ]; then
-		echo "gvmd socket ready"
-		break
-	fi
-	sleep 1
-	GVMD_SOCKET_WAIT=$((GVMD_SOCKET_WAIT + 1))
-done
-if [ $GVMD_SOCKET_WAIT -ge 30 ]; then
-	echo "WARNING: gvmd socket not found after 30s, continuing anyway"
-fi
 
 if [ $SKIPGSAD == "false" ]; then
 	echo "Starting Greenbone Security Assistant..."
 	#su -c "gsad --verbose --http-only --no-redirect --port=9392" gvm
 	if [ $HTTPS == "true" ]; then
-				su -c "gsad --verbose --timeout=$GSATIMEOUT \
-					--munix-socket=/run/gvmd/gvmd.sock \
-					--gnutls-priorities=SECURE128:+SECURE192:-VERS-TLS-ALL:+VERS-TLS1.2 \
-					--no-redirect \
-					--port=9392 $GSAD_ARGS" gvm
-			else
-				su -c "gsad --verbose --timeout=$GSATIMEOUT \
-					--munix-socket=/run/gvmd/gvmd.sock \
-					--http-only --no-redirect --port=9392 \
-					$GSAD_ARGS" gvm
-			fi
-	# Wait for GSAD to be ready
-	echo "Waiting for GSAD to start..."
-	sleep 3
-	timeout=30
-	while [ $timeout -gt 0 ]; do
-		if curl -f http://localhost:9392/ >/dev/null 2>&1 || curl -kf https://localhost:9392/ >/dev/null 2>&1; then
-			echo "GSAD is ready"
-			break
-		fi
-		sleep 1
-		timeout=$((timeout - 1))
-	done
-	if [ $timeout -eq 0 ]; then
-		echo "Warning: GSAD may not have started properly"
+			# removed --mlisten 127.0.0.1 -m 9390 
+			su -c "gsad --verbose --timeout=$GSATIMEOUT \
+				--munix-socket=/run/gvmd/gvmd.sock \
+				--gnutls-priorities=SECURE128:+SECURE192:-VERS-TLS-ALL:+VERS-TLS1.2 \
+				--no-redirect \
+				--port=9392 $GSAD_ARGS" gvm
+	else
+		su -c "gsad --verbose --timeout=$GSATIMEOUT \
+		--munix-socket=/run/gvmd/gvmd.sock \
+		   --http-only --no-redirect --port=9392 \
+		   $GSAD_ARGS" gvm
 	fi
 else
 	echo "Skipping GSAD start because SKIPGSAD=$SKIPGSAD"
 fi
-GVMVER=$(su -c "gvmd --version" gvm )
+GVMVER=$(su -c "gvmd --version" gvm ) 
 touch /running
 echo "++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
 echo "+ Your GVM/openvas/postgresql container is now ready to use! +"
@@ -554,7 +480,7 @@ echo "++++++++++++++++"
 echo "+ Tailing logs +"
 echo "++++++++++++++++"
 tail -F /usr/local/var/log/gvm/* &
-echo "Log tail started"
+echo "Log tail started" 
 # This is part of making sure we shutdown postgres properly on container shutdown.
 
 if [ "x$MODE" != "xrefresh" ]; then
