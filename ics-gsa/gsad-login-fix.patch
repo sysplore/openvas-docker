@@ -1,23 +1,28 @@
 --- a/src/gsad_http_handler_functions.c
 +++ b/src/gsad_http_handler_functions.c
-+++ /tmp/gsad_http_patched.c	2026-07-14 00:37:41.779854529 +0600
-@@ -282,6 +282,21 @@
- 
+@@ -239,6 +239,27 @@ gsad_http_handle_setup_user (gsad_http_handler_t *handler_next,
+
    const gchar *url = gsad_connection_info_get_url (con_info);
- 
-+  /* GSA v27.4.1 sends login requests to /gmp?cmd=login instead of /login.
-+   * Allow these to proceed without a session token so the GMP handler
-+   * can process the login via authenticate_gmp. */
-+  if (ret == USER_BAD_MISSING_TOKEN)
+
++  /* GSA v27.4.1 sends login requests to /gmp?cmd=login, not /login.
++   * Intercept here before the reauthentication response.
++   * The POST body params (login, password) are in con_info params,
++   * but the URL query param (cmd) may NOT be merged. Look up cmd
++   * directly from the connection value. */
++  if ((ret == USER_BAD_MISSING_TOKEN || ret == USER_BAD_MISSING_COOKIE)
++      && url && g_strcmp0 (url, "/gmp") == 0)
 +    {
-+      params_t *params = gsad_connection_info_get_params (con_info);
-+      const char *cmd = params_value (params, "cmd");
-+      if (cmd && (strcasecmp (cmd, "login") == 0))
++      const gchar *cmd = MHD_lookup_connection_value (
++        connection, MHD_GET_ARGUMENT_KIND, "cmd");
++      if (cmd == NULL)
 +        {
-+          g_debug ("Bypassing session check for /gmp?cmd=login");
-+          return gsad_http_handler_call (handler_next, connection, con_info,
-+                                         NULL);
++          params_t *p = gsad_connection_info_get_params (con_info);
++          cmd = params_value (p, "cmd");
 +        }
++      if (cmd && (g_strcmp0 (cmd, "login") == 0
++                  || strcasecmp (cmd, "login") == 0))
++        return gsad_http_handle_login (handler_next, handler_data,
++                                       connection, con_info, data);
 +    }
 +
    if ((ret == USER_EXPIRED_TOKEN) || (ret == USER_BAD_MISSING_COOKIE)

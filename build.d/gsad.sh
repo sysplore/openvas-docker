@@ -1,5 +1,4 @@
 #!/bin/bash
-apt update && apt install patch -y 
 echo  "Procs $(nproc)" > /usr/local/include/BuildProcs
 INSTALL_PREFIX="/usr/local/"
 set -Eeuo pipefail
@@ -12,12 +11,11 @@ GSAD_VERSION=$(echo $gsad| sed "s/^v\(.*$\)/\1/")
 curl -f -L https://github.com/greenbone/gsad/archive/refs/tags/v$GSAD_VERSION.tar.gz -o gsad-$GSAD_VERSION.tar.gz
 tar xvf gsad-$GSAD_VERSION.tar.gz
 cd /build/*/
-# Implement ICS GSA Mods
-BUILDDIR=$(pwd)
-echo "BUILDDIR $BUILDDIR"
-patch -p1 < /ics-gsa/gsad-login-fix.patch
 
-#/ics-gsa/scripts/gsad-mods.sh $BUILDDIR
+# Apply login fix patch for GSA v27.4.1 compatibility
+# GSA sends login to /gmp?cmd=login; stock gsad only handles /login URL
+apt update && apt install patch -y
+patch -p1 < /ics-gsa/gsad-login-fix.patch
 
 cmake /build/gsad-$GSAD_VERSION \
 	-DCMAKE_INSTALL_PREFIX=$INSTALL_PREFIX \

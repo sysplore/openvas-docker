@@ -6,7 +6,6 @@ cleanup() {
 	echo "#################################"
 	echo "Dumping all logs"
 	echo "#################################"
-	rm -f /running
     tail /var/log/gvm/*
 	echo "Log dump complete"
 	echo "killing gvmd"
@@ -61,10 +60,6 @@ function DBCheck {
         fi
 }
 
-# Make sure the gvmd.pid is not there to ensure healthcheck doesn't start early. 
-rm -f /run/gvmd/gvmd.pid
-rm -f /running
-
 # Fire up redis
 redis-server --unixsocket /run/redis/redis.sock --unixsocketperm 777 \
              --timeout 0 --databases $REDISDBS --maxclients 4096 --daemonize yes \
@@ -86,7 +81,25 @@ echo "Redis ready."
 
 # Postgres config should be tighter.
 if [ ! -f "/setup" ]; then
+	# Create conf.d directory if it doesn't exist
+	mkdir -p /data/database/conf.d
+	# Need to look at restricting this. Maybe to localhost ?
+	echo "listen_addresses = '*'" > /data/database/postgresql.conf
+	echo "port = 5432" >> /data/database/postgresql.conf
+	echo "log_destination = 'stderr'" >> /data/database/postgresql.conf
+	echo "logging_collector = on" >> /data/database/postgresql.conf
+	echo "log_directory = '/data/var-log/postgresql/'" >> /data/database/postgresql.conf
+	echo "log_filename = 'postgresql-gvmd.log'" >> /data/database/postgresql.conf
+	echo "log_file_mode = 0666" >> /data/database/postgresql.conf
+	echo "log_truncate_on_rotation = off" >> /data/database/postgresql.conf
+	echo "log_line_prefix = '%m [%p] %q%u@%d '" >> /data/database/postgresql.conf
+	echo "log_timezone = 'Etc/UTC'" >> /data/database/postgresql.conf
+	# This probably tooooo open.
+	echo -e "host\tall\tall\t0.0.0.0/0\tmd5" > /data/database/pg_hba.conf
+	echo -e "host\tall\tall\t::0/0\tmd5" >> /data/database/pg_hba.conf
+	echo -e "local\tall\tall\ttrust"  >> /data/database/pg_hba.conf
 	chown postgres:postgres -R /data/database
+	touch /setup
 fi
 PGFAIL=0
 PGUPFAIL=0
@@ -105,10 +118,9 @@ echo "Starting PostgreSQL..."
 su -c "/usr/lib/postgresql/${PGVER}/bin/pg_ctl -D /data/database start" postgres || PGFAIL=$?
 echo "pg exit with $PGFAIL ." 
 if [ $PGFAIL -ne 0 ]; then
-	echo "It looks like postgres failed to start. ( Exit code: \"$?\" "
+	echo "It looks like postgres failed to start. ( Exit code: \"$PGFAIL\" "
 	echo "Assuming this is due to different database version and starting upgrade."
-	#/scripts/db-upgrade.sh || PGUPFAIL=$?
-	/scripts/pg13-2-15.sh || PGUPFAIL=$?
+	/scripts/db-upgrade.sh || PGUPFAIL=$?
 	if [ $PGUPFAIL -ne 0 ]; then
 		echo "Looks like this is either not an upgrade problem, or the upgrade failed."
 		exit
@@ -131,13 +143,13 @@ if ! [ -f /data/var-lib/gvm/private/CA/cakey.pem ]; then
     	su -c "/usr/local/bin/gvm-manage-certs -afv" gvm 
 fi
 # if there is no existing DB, and there is no base db archive, then we need to create a new DB.
-if [ $(DBCheck) -eq 0 ] && ! [ -f /usr/lib/gvmd.sql.xz ]; then
-		echo "Looks like we need to create an empty databse."
-		CREATE_EMPTY_DATABASE="true"
-		# Set SKIPSYNC to false so we pull new feeds
-		SKIPSYNC="false"
-		# Set LOADDEFAULT to false because we don't have the DB.
-		LOADDEFAULT="false"
+if [ $(DBCheck) -eq 0 ] && ( ! [ -f /usr/lib/gvmd.sql.xz ] || [ $(stat -c%s /usr/lib/gvmd.sql.xz 2>/dev/null || echo 0) -lt 100 ] ); then
+			echo "Looks like we need to create an empty databse."
+			CREATE_EMPTY_DATABASE="true"
+			# Set SKIPSYNC to false so we pull new feeds
+			SKIPSYNC="false"
+			# Set LOADDEFAULT to false because we don't have the DB.
+			LOADDEFAULT="false"
 fi
 echo -e "CREATE_EMPTY_DATABASE=$CREATE_EMPTY_DATABASE\nLOADDEFAULT=$LOADDEFAULT"
 
@@ -190,16 +202,18 @@ if [ $CREATE_EMPTY_DATABASE = "true" ]; then
 	su -c "psql --dbname=gvmd --command='create extension \"uuid-ossp\";'" postgres
 	su -c "psql --dbname=gvmd --command='create extension \"pgcrypto\";'" postgres
 	chown postgres:postgres -R /data/database
-	su -c "/usr/lib/postgresql/${PGVER}/bin/pg_ctl -D /data/database restart" postgres
+su -c "/usr/lib/postgresql/${PGVER}/bin/pg_ctl -D /data/database restart" postgres
 
-	su -c "gvm-manage-certs -V" gvm 
+su -c "gvm-manage-certs -V" gvm 
+NOCERTS=$?
+while [ $NOCERTS -ne 0 ] ; do
+	su -c "gvm-manage-certs -vaf " gvm
+	su -c "gvm-manage-certs -V " gvm 
 	NOCERTS=$?
-	while [ $NOCERTS -ne 0 ] ; do
-		su -c "gvm-manage-certs -vaf " gvm
-		su -c "gvm-manage-certs -V " gvm 
-		NOCERTS=$?
-	done
- --rebuild-gvmd-data=report_formats
+done
+
+# Rebuild report formats if possible. Fails silently if feed not synced yet.
+su -c "gvmd --rebuild-gvmd-data=report_formats" gvm || true
 
 fi
 # if RESTORE is true, hopefully the user has mounted thier database in the right place.
@@ -335,29 +349,16 @@ ls -l  /var/run/ospd/ospd-openvas.sock
 chown gvm:gvm /var/run/ospd/ospd-openvas.sock
 ls -l  /var/run/ospd/ospd-openvas.sock 
 
-# Just incase the boot took too long and there are already gvmd procs running from healthcheck
-
-# GVMSTATUS=1
-# STARTCOUNT=0
-# while [ $GVMSTATUS -ne 0 ] && [ $STARTCOUNT -lt 2 ]; do
-# 	pkill gvmd || true
-# 	sleep 1
-# 	pkill gvmd || true
-	echo "Starting Greenbone Vulnerability Manager..."
-	su -c "gvmd --listen-group=gvm  \
-				su -c "gvmd --listen-group=gvm  \
-									--osp-vt-update=/var/run/ospd/ospd-openvas.sock \
-									--max-email-attachment-size=64000000 \
-									--max-email-include-size=64000000 \
-									--max-email-message-size=64000000 \
-									--broker-address='' \
-									--unix-socket=/run/gvmd/gvmd.sock \
-									\"$GVMD_ARGS\"" gvm
-# 	GVMSTATUS="$?"
-	
-# 	STARTCOUNT=$(( $STARTCOUNT + 1 ))
-# 	echo -e "GVMSTATUS = $GVMSTATUS\n\tSTARTCOUNT = $STARTCOUNT\n"
-# done
+echo "Starting Greenbone Vulnerability Manager..."
+su -c "gvmd \
+					--listen-group=gvm \
+					--osp-vt-update=/var/run/ospd/ospd-openvas.sock \
+					--max-email-attachment-size=64000000 \
+					--max-email-include-size=64000000 \
+					--max-email-message-size=64000000 \
+					--broker-address='' \
+					--unix-socket=/run/gvmd/gvmd.sock \
+					$GVMD_ARGS" gvm
 
 
 
@@ -371,42 +372,52 @@ if ! [ -L /var/run/ospd/ospd.sock ]; then
 	ln -s /var/run/ospd/ospd-openvas.sock /var/run/ospd/ospd.sock 
 fi
 
+# Ensure /run/gvmd exists for any tools that expect the socket dir
+mkdir -p /run/gvmd
+
 echo "Time to fixup the gvm accounts."
 
-
-if [ "$USERNAME" == "admin" ] && [ "$PASSWORD" != "admin" ] ; then
-	# Change the admin password
-	echo "Setting admin password"
-	su -c "gvmd --user=\"$USERNAME\" --new-password=\"$PASSWORD\" " gvm  
-elif [ "$USERNAME" != "admin" ] ; then 
-	# create user and set password
-	echo "Creating new user $USERNAME with supplied password."
-	echo "If no password supplied on startup, then the default password is admin" 
-	echo " ...... Don't do that ..... "
-	echo "Creating Greenbone Vulnerability Manager admin user as $USERNAME"
-	su -c "gvmd --role=\"Super Admin\" --create-user=\"$USERNAME\" --password=\"$PASSWORD\"" gvm
-	echo "admin user created"
-	ADMINUUID=$(su -c "gvmd --get-users --verbose | awk /$USERNAME/'{print \$2}' " gvm)
-	echo "admin user UUID is $ADMINUUID"
-	echo "Granting admin access to defaults"
-	su -c "gvmd --modify-setting 78eceaec-3385-11ea-b237-28d24461215b --value $ADMINUUID" gvm
-	# Now ... we need to remove the "admin" account ...
-	su -c "gvmd --delete-user=admin" gvm 
-elif [ $CREATE_EMPTY_DATABASE = "true" ]; then
-	echo "Creating Greenbone Vulnerability Manager admin user $USERNAME"
-	su -c "gvmd --role=\"Super Admin\" --create-user=\"$USERNAME\" --password=\"$PASSWORD\"" gvm
-	echo "admin user created"
-	ADMINUUID=$(su -c "gvmd --get-users --verbose | awk '{print \$2}' " gvm)
-	echo "admin user UUID is $ADMINUUID"
-	echo "Granting admin access to defaults"
-	su -c "gvmd --modify-setting 78eceaec-3385-11ea-b237-28d24461215b --value $ADMINUUID" gvm
+# Only create/change admin password on first setup (fresh DB)
+# Uses /setup-users sentinel to skip on subsequent restarts
+if [ ! -f "/setup-users" ]; then
+	if [ "$USERNAME" == "admin" ] && [ "$PASSWORD" != "admin" ] ; then
+		# Change the admin password
+		echo "Setting admin password"
+		su -c "gvmd --user=\"$USERNAME\" --new-password=\"$PASSWORD\" " gvm  
+	elif [ "$USERNAME" != "admin" ] ; then 
+		# create user and set password
+		echo "Creating new user $USERNAME with supplied password."
+		echo "If no password supplied on startup, then the default password is admin" 
+		echo " ...... Don't do that ..... "
+		echo "Creating Greenbone Vulnerability Manager admin user as $USERNAME"
+		su -c "gvmd --role=\"Super Admin\" --create-user=\"$USERNAME\" --password=\"$PASSWORD\"" gvm
+		echo "admin user created"
+		ADMINUUID=$(su -c "gvmd --get-users --verbose | awk /$USERNAME/'{print \$2}' " gvm)
+		echo "admin user UUID is $ADMINUUID"
+		echo "Granting admin access to defaults"
+		su -c "gvmd --modify-setting 78eceaec-3385-11ea-b237-28d24461215b --value $ADMINUUID" gvm
+		# Now ... we need to remove the "admin" account ...
+		su -c "gvmd --delete-user=admin" gvm 
+	elif [ $CREATE_EMPTY_DATABASE = "true" ]; then
+		echo "Creating Greenbone Vulnerability Manager admin user $USERNAME"
+		su -c "gvmd --role=\"Super Admin\" --create-user=\"$USERNAME\" --password=\"$PASSWORD\"" gvm
+		echo "admin user created"
+		ADMINUUID=$(su -c "gvmd --get-users --verbose | awk '{print \$2}' " gvm)
+		echo "admin user UUID is $ADMINUUID"
+		echo "Granting admin access to defaults"
+		su -c "gvmd --modify-setting 78eceaec-3385-11ea-b237-28d24461215b --value $ADMINUUID" gvm
+	fi
+	touch /setup-users
+else
+	echo "Skipping admin password change (users already configured)"
 fi
 # Check to see if the HealthCheck user exists. If not, create it and set a new random password.
 echo "Checking for/creating healthcheck user."
-touch /etc/healthcheck.pass 
-chown gvm:gvm /etc/healthcheck.pass
-chmod 600 /etc/healthcheck.pass
-su -c "/scripts/create-hc-user.sh \"$PASSWORD\"" gvm  || true
+mkdir -p /etc/gvm
+touch /etc/gvm/healthcheck.pass 
+chown gvm:gvm /etc/gvm/healthcheck.pass
+chmod 600 /etc/gvm/healthcheck.pass
+su -c "GVM_HEALTH_PASS_FILE=/etc/gvm/healthcheck.pass /scripts/create-hc-user.sh \"$PASSWORD\"" gvm  || true
 
 
 touch /setup
@@ -445,23 +456,23 @@ if [ $SKIPGSAD == "false" ]; then
 	echo "Starting Greenbone Security Assistant..."
 	#su -c "gsad --verbose --http-only --no-redirect --port=9392" gvm
 	if [ $HTTPS == "true" ]; then
-			# removed --mlisten 127.0.0.1 -m 9390 
-			su -c "gsad --verbose --timeout=$GSATIMEOUT \
-				--munix-socket=/run/gvmd/gvmd.sock \
-				--gnutls-priorities=SECURE128:+SECURE192:-VERS-TLS-ALL:+VERS-TLS1.2 \
-				--no-redirect \
-				--port=9392 $GSAD_ARGS" gvm
-	else
-		su -c "gsad --verbose --timeout=$GSATIMEOUT \
-		--munix-socket=/run/gvmd/gvmd.sock \
-		   --http-only --no-redirect --port=9392 \
-		   $GSAD_ARGS" gvm
-	fi
+				su -c "gsad --verbose --timeout=$GSATIMEOUT \
+					--munix-socket=/run/gvmd/gvmd.sock \
+					--gnutls-priorities=SECURE128:+SECURE192:-VERS-TLS-ALL:+VERS-TLS1.2 \
+					--no-redirect \
+					--listen=0.0.0.0 --port=9392 $GSAD_ARGS" gvm
+		else
+				su -c "gsad --verbose --timeout=$GSATIMEOUT \
+					--munix-socket=/run/gvmd/gvmd.sock \
+				   --http-only --no-redirect --listen=0.0.0.0 --port=9392 \
+				   $GSAD_ARGS" gvm
+		fi
 else
 	echo "Skipping GSAD start because SKIPGSAD=$SKIPGSAD"
 fi
 GVMVER=$(su -c "gvmd --version" gvm ) 
 touch /running
+touch /setup
 echo "++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
 echo "+ Your GVM/openvas/postgresql container is now ready to use! +"
 echo "++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"

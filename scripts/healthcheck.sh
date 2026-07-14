@@ -34,7 +34,7 @@ if ! [ -f /running ]; then
 	exit
 fi
 
-GMPPASS="$(cat /etc/gvm/healthcheck.pass)"
+GMPPASS="$(cat /etc/gvm/healthcheck.pass 2>/dev/null || true)"
 
 
 case  $FUNC in
@@ -79,7 +79,7 @@ case  $FUNC in
 	single|refresh)
 		FAIL=0
 		# gvmd
-		su -c "gvm-cli --gmp-username=\"healthcheck\" --gmp-password=\"$GMPPASS\" socket --xml \"<get_version/>\" || FAIL=1" gvm
+		su -c "gvm-cli --gmp-username=\"healthcheck\" --gmp-password=\"$GMPPASS\" socket --socketpath /run/gvmd/gvmd.sock --xml \"<get_version/>\" || FAIL=1" gvm
 		# openvas
 		# Only check openvas if gvmd is running. Otherwise it hangs and then gvmd can't start.
 		if [ $FAIL -eq 0 ]; then
@@ -112,4 +112,4 @@ case  $FUNC in
 		fi	
 
 
-esac
+	esac
