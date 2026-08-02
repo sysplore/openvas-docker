@@ -79,7 +79,12 @@ case  $FUNC in
 	single|refresh)
 		FAIL=0
 		# gvmd
-		su -c "gvm-cli --gmp-username=\"healthcheck\" --gmp-password=\"$GMPPASS\" socket --socketpath /run/gvmd/gvmd.sock --xml \"<get_version/>\" || FAIL=1" gvm
+		# NOTE: the check must run in the OUTER shell so its exit status
+		# propagates (putting "|| FAIL=1" inside the su-quoted string only
+		# sets FAIL in the su'd subshell and gvmd failures were never counted).
+		if ! su -c "gvm-cli --gmp-username=\"healthcheck\" --gmp-password=\"$GMPPASS\" socket --socketpath /run/gvmd/gvmd.sock --xml \"<get_version/>\"" gvm >/dev/null 2>&1; then
+			FAIL=1
+		fi
 		# openvas
 		# Only check openvas if gvmd is running. Otherwise it hangs and then gvmd can't start.
 		if [ $FAIL -eq 0 ]; then

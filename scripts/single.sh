@@ -104,6 +104,17 @@ fi
 PGFAIL=0
 PGUPFAIL=0
 INITFAIL=0
+# Clean up stale PostgreSQL lock files from previous unclean shutdowns.
+# pg_ctl otherwise refuses to start, and the container mistakes the failure
+# for a DB version mismatch and bails out ("keeps going down").
+if [ -f /data/database/postmaster.pid ]; then
+	PID=$(head -1 /data/database/postmaster.pid 2>/dev/null || echo 0)
+	if [ -n "$PID" ] && [ "$PID" != "0" ] && ! kill -0 "$PID" 2>/dev/null; then
+		echo "Removing stale PostgreSQL lock file (PID $PID not running)"
+		rm -f /data/database/postmaster.pid
+		rm -f /data/database/postmaster.opts
+	fi
+fi
 echo "Starting PostgreSQL..."
 # if ! [ -d /data/database/base ]; then
 # 	ls -l /data/database
@@ -115,7 +126,10 @@ echo "Starting PostgreSQL..."
 # 		exit
 # 	fi
 # fi
-su -c "/usr/lib/postgresql/${PGVER}/bin/pg_ctl -D /data/database start" postgres || PGFAIL=$?
+# -t 180: after an unclean shutdown (power/IO), PostgreSQL crash recovery can
+# take minutes. The default 60s timeout made pg_ctl report failure, which the
+# container then misread as a DB version mismatch, causing the container to exit.
+su -c "/usr/lib/postgresql/${PGVER}/bin/pg_ctl -D /data/database -t 180 start" postgres || PGFAIL=$?
 echo "pg exit with $PGFAIL ." 
 if [ $PGFAIL -ne 0 ]; then
 	echo "It looks like postgres failed to start. ( Exit code: \"$PGFAIL\" "
@@ -377,9 +391,13 @@ mkdir -p /run/gvmd
 
 echo "Time to fixup the gvm accounts."
 
-# Only create/change admin password on first setup (fresh DB)
-# Uses /setup-users sentinel to skip on subsequent restarts
-if [ ! -f "/setup-users" ]; then
+# Only create/change admin credentials on a FRESH database (first install).
+# On restarts with an existing database we never touch credentials - the
+# user manages the admin password via the web UI and it must persist.
+# (The previous /setup-users sentinel lived in / which is ephemeral, so the
+#  admin password was silently reset on every container recreate, breaking
+#  logins with the user's web-UI password.)
+if [ "$LOADDEFAULT" == "true" ] || [ "$CREATE_EMPTY_DATABASE" == "true" ]; then
 	if [ "$USERNAME" == "admin" ] && [ "$PASSWORD" != "admin" ] ; then
 		# Change the admin password
 		echo "Setting admin password"
@@ -407,13 +425,13 @@ if [ ! -f "/setup-users" ]; then
 		echo "Granting admin access to defaults"
 		su -c "gvmd --modify-setting 78eceaec-3385-11ea-b237-28d24461215b --value $ADMINUUID" gvm
 	fi
-	touch /setup-users
 else
-	echo "Skipping admin password change (users already configured)"
+	echo "Skipping admin password change (existing database - credentials preserved)"
 fi
 # Check to see if the HealthCheck user exists. If not, create it and set a new random password.
 echo "Checking for/creating healthcheck user."
 mkdir -p /etc/gvm
+chown gvm:gvm /etc/gvm
 touch /etc/gvm/healthcheck.pass 
 chown gvm:gvm /etc/gvm/healthcheck.pass
 chmod 600 /etc/gvm/healthcheck.pass

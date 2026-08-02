@@ -29,8 +29,18 @@ make install
 # openvasd is the replacement for notus-scanner and eventually ospd-openvas
 # See: https://github.com/greenbone/openvas-scanner/tree/main/rust
 cd ..
-curl -o rustup.sh https://sh.rustup.rs
-bash ./rustup.sh -y
+# NOTE: sh.rustup.rs only resolves to IPv6 (CloudFront) and fails on hosts
+# without IPv6 connectivity (curl: (7) Couldn't connect to server). Download
+# the rustup-init binary directly from the static.rust-lang.org CDN instead.
+case "$(uname -m)" in
+  x86_64) RUSTUP_TARGET="x86_64-unknown-linux-gnu" ;;
+  aarch64) RUSTUP_TARGET="aarch64-unknown-linux-gnu" ;;
+  armv7l) RUSTUP_TARGET="armv7-unknown-linux-gnueabihf" ;;
+  *) echo "ERROR: unsupported architecture for rustup"; exit 1 ;;
+esac
+curl -fL -o rustup-init "https://static.rust-lang.org/rustup/dist/${RUSTUP_TARGET}/rustup-init"
+chmod +x rustup-init
+./rustup-init -y
 . "$HOME/.cargo/env"
 
 cd rust

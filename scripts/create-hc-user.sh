@@ -88,14 +88,17 @@ wait_for_gvmd_gmp() {
 wait_for_gvmd_gmp || true
 
 # Check if healthcheck user exists
-if su -c "gvmd --get-users --verbose" gvm 2>/dev/null | grep -qw "$GVM_HEALTH_USER"; then
+# NOTE: this script is invoked via "su -c ... gvm", so it already runs as the
+# gvm user. Nested "su -c ... gvm" calls would require a password and fail,
+# silently breaking healthcheck user setup - so plain gvmd calls are used.
+if gvmd --get-users --verbose 2>/dev/null | grep -qw "$GVM_HEALTH_USER"; then
   echo "GVM healthcheck user already exists: $GVM_HEALTH_USER"
 
   # Check existing password file
   if [ -s "$GVM_HEALTH_PASS_FILE" ]; then
     existing_pass=$(cat "$GVM_HEALTH_PASS_FILE")
     # Try to verify by resetting to same password
-    if su -c "gvmd --user=\"$GVM_HEALTH_USER\" --new-password=\"$existing_pass\"" gvm >/dev/null 2>&1; then
+    if gvmd --user="$GVM_HEALTH_USER" --new-password="$existing_pass" >/dev/null 2>&1; then
       write_health_password_file "$existing_pass"
       echo "Healthcheck password unchanged."
       ls -l /$GVM_HEALTH_PASS_FILE
@@ -105,13 +108,13 @@ if su -c "gvmd --get-users --verbose" gvm 2>/dev/null | grep -qw "$GVM_HEALTH_US
 
   echo "Setting new password for healthcheck user."
   new_pass="$(random_password_19)"
-  su -c "gvmd --user=\"$GVM_HEALTH_USER\" --new-password=\"$new_pass\"" gvm
+  gvmd --user="$GVM_HEALTH_USER" --new-password="$new_pass"
   write_health_password_file "$new_pass"
   echo "Healthcheck password updated."
 else
   echo "Creating healthcheck user: $GVM_HEALTH_USER"
   new_pass="$(random_password_19)"
-  su -c "gvmd --create-user=\"$GVM_HEALTH_USER\" --password=\"$new_pass\"" gvm
+  gvmd --create-user="$GVM_HEALTH_USER" --password="$new_pass"
   write_health_password_file "$new_pass"
   echo "Healthcheck user created."
 fi
