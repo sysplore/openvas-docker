@@ -221,7 +221,9 @@ if ! [ -L /var/lib/notus ]; then
 fi
 
 # Fix up /var/lib/openvas
-if ! [ -L /var/lib/openvas ] && { [ "$1" == "gvmd" ] || [ -z $1 ] || [ $1 == "refresh" ]; };  then
+# ("single" is used by the split-DB setup where this container runs the
+#  whole OpenVAS stack except PostgreSQL, which lives in its own container.)
+if ! [ -L /var/lib/openvas ] && { [ "$1" == "gvmd" ] || [ "$1" == "single" ] || [ -z $1 ] || [ $1 == "refresh" ]; };  then
 	echo "Fixing /var/lib/openvas"
 	if [ -d /var/lib/openvas ]; then
 		echo "Preserving contents of /var/lib/openvas"

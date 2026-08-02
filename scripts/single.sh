@@ -12,7 +12,9 @@ cleanup() {
 	pkill gvmd
 	sleep 1
 	echo "Stopping postgresql"
-    su -c "/usr/lib/postgresql/${PGVER}/bin/pg_ctl -D /data/database stop" postgres
+	if [ "${SKIPPG:-false}" != "true" ]; then
+		su -c "/usr/lib/postgresql/${PGVER}/bin/pg_ctl -D /data/database stop" postgres
+	fi
 	
 }
 
@@ -24,6 +26,9 @@ fi
 
 set -Eeuo pipefail
 PGVER=${PGVER:-15}
+# SKIPPG=true: the PostgreSQL database runs in its own container and
+# single.sh only connects to it via the shared /run volume socket.
+SKIPPG=${SKIPPG:-false}
 USERNAME=${USERNAME:-admin}
 PASSWORD=${PASSWORD:-admin}
 RELAYHOST=${RELAYHOST:-172.17.0.1}
@@ -60,6 +65,14 @@ function DBCheck {
         fi
 }
 
+# Remove stale sockets/PIDs from a previous run of this container.
+# (In split-DB mode start.sh skips its global socket cleanup because it
+#  would delete the database container's sockets on the shared /run volume.
+#  Only ever touch OUR sockets here, never /run/postgresql.)
+rm -f /run/redis/redis.sock /run/ospd/ospd-openvas.sock /run/ospd/ospd.sock \
+      /run/gvmd/gvmd.sock /run/gsad/gsad.sock
+rm -f /run/gvmd/gvmd.pid /run/ospd/ospd-openvas.pid
+
 # Fire up redis
 redis-server --unixsocket /run/redis/redis.sock --unixsocketperm 777 \
              --timeout 0 --databases $REDISDBS --maxclients 4096 --daemonize yes \
@@ -79,6 +92,7 @@ while  [ "${X}" != "PONG" ]; do
 done
 echo "Redis ready."
 
+if [ "$SKIPPG" != "true" ]; then
 # Postgres config should be tighter.
 if [ ! -f "/setup" ]; then
 	# Create conf.d directory if it doesn't exist
@@ -143,12 +157,41 @@ if [ $PGFAIL -ne 0 ]; then
 		su -c "/usr/lib/postgresql/${PGVER}/bin/pg_ctl -D /data/database start" postgres
 	fi
 fi
-echo "Checking for existing DB"
-if [ $(DBCheck) -eq 0 ]; then
-	LOADDEFAULT="true"
-	echo "Loading Default Database"
 else
-	LOADDEFAULT="false"
+	echo "SKIPPG=true: the database runs in its own container."
+	echo "Waiting for the database container (shared socket)..."
+	while  [ ! -S /run/postgresql/.s.PGSQL.5432 ]; do
+		sleep 1
+	done
+	until pg_isready -q -U postgres 2>/dev/null; do
+		echo "Database not ready yet..."
+		sleep 1
+	done
+	# The database container writes /run/loaddefault to tell us whether it
+	# loaded the base DB from the image archives or created an empty one.
+	LOADDEFAULT=$(cat /run/loaddefault 2>/dev/null || echo "false")
+	CREATE_EMPTY_DATABASE="false"
+	if [ "$LOADDEFAULT" != "true" ]; then
+		echo "Waiting for the gvmd database to be created by the database container..."
+		# Also wait out the postgres restart the database container does after
+		# creating the empty database, so gvmd --migrate never races it.
+		until su -c "psql -d gvmd -tAc 'select 1'" postgres 2>/dev/null | grep -q 1; do
+			sleep 2
+		done
+	fi
+	echo "Database is ready."
+fi
+
+# LOADDEFAULT is determined above: in single mode from a local DBCheck,
+# in split-DB mode from /run/loaddefault written by the database container.
+if [ "$SKIPPG" != "true" ]; then
+	echo "Checking for existing DB"
+	if [ $(DBCheck) -eq 0 ]; then
+		LOADDEFAULT="true"
+		echo "Loading Default Database"
+	else
+		LOADDEFAULT="false"
+	fi
 fi
 echo "Running first start configuration..."
 
@@ -157,7 +200,7 @@ if ! [ -f /data/var-lib/gvm/private/CA/cakey.pem ]; then
     	su -c "/usr/local/bin/gvm-manage-certs -afv" gvm 
 fi
 # if there is no existing DB, and there is no base db archive, then we need to create a new DB.
-if [ $(DBCheck) -eq 0 ] && ( ! [ -f /usr/lib/gvmd.sql.xz ] || [ $(stat -c%s /usr/lib/gvmd.sql.xz 2>/dev/null || echo 0) -lt 100 ] ); then
+if [ "$SKIPPG" != "true" ] && [ $(DBCheck) -eq 0 ] && ( ! [ -f /usr/lib/gvmd.sql.xz ] || [ $(stat -c%s /usr/lib/gvmd.sql.xz 2>/dev/null || echo 0) -lt 100 ] ); then
 			echo "Looks like we need to create an empty databse."
 			CREATE_EMPTY_DATABASE="true"
 			# Set SKIPSYNC to false so we pull new feeds
@@ -382,6 +425,27 @@ until su -c "gvmd --get-users" gvm; do
 	sleep 1
 done
 
+# Watch over gvmd: if it crashes (e.g. the database container restarted and
+# its pooled connections were killed), restart it so the stack self-heals
+# without a container restart.
+(
+	while true; do
+		sleep 10
+		if ! pgrep -x gvmd >/dev/null 2>&1; then
+			echo "$(date -u) gvmd is not running - restarting gvmd"
+			su -c "gvmd \
+					--listen-group=gvm \
+					--osp-vt-update=/var/run/ospd/ospd-openvas.sock \
+					--max-email-attachment-size=64000000 \
+					--max-email-include-size=64000000 \
+					--max-email-message-size=64000000 \
+					--broker-address='' \
+					--unix-socket=/run/gvmd/gvmd.sock \
+					$GVMD_ARGS" gvm || true
+		fi
+	done
+) &
+
 if ! [ -L /var/run/ospd/ospd.sock ]; then
 	ln -s /var/run/ospd/ospd-openvas.sock /var/run/ospd/ospd.sock 
 fi
@@ -397,34 +461,46 @@ echo "Time to fixup the gvm accounts."
 # (The previous /setup-users sentinel lived in / which is ephemeral, so the
 #  admin password was silently reset on every container recreate, breaking
 #  logins with the user's web-UI password.)
-if [ "$LOADDEFAULT" == "true" ] || [ "$CREATE_EMPTY_DATABASE" == "true" ]; then
-	if [ "$USERNAME" == "admin" ] && [ "$PASSWORD" != "admin" ] ; then
-		# Change the admin password
-		echo "Setting admin password"
-		su -c "gvmd --user=\"$USERNAME\" --new-password=\"$PASSWORD\" " gvm  
-	elif [ "$USERNAME" != "admin" ] ; then 
-		# create user and set password
-		echo "Creating new user $USERNAME with supplied password."
-		echo "If no password supplied on startup, then the default password is admin" 
-		echo " ...... Don't do that ..... "
-		echo "Creating Greenbone Vulnerability Manager admin user as $USERNAME"
-		su -c "gvmd --role=\"Super Admin\" --create-user=\"$USERNAME\" --password=\"$PASSWORD\"" gvm
-		echo "admin user created"
-		ADMINUUID=$(su -c "gvmd --get-users --verbose | awk /$USERNAME/'{print \$2}' " gvm)
-		echo "admin user UUID is $ADMINUUID"
-		echo "Granting admin access to defaults"
-		su -c "gvmd --modify-setting 78eceaec-3385-11ea-b237-28d24461215b --value $ADMINUUID" gvm
-		# Now ... we need to remove the "admin" account ...
-		su -c "gvmd --delete-user=admin" gvm 
-	elif [ $CREATE_EMPTY_DATABASE = "true" ]; then
-		echo "Creating Greenbone Vulnerability Manager admin user $USERNAME"
-		su -c "gvmd --role=\"Super Admin\" --create-user=\"$USERNAME\" --password=\"$PASSWORD\"" gvm
-		echo "admin user created"
-		ADMINUUID=$(su -c "gvmd --get-users --verbose | awk '{print \$2}' " gvm)
-		echo "admin user UUID is $ADMINUUID"
-		echo "Granting admin access to defaults"
-		su -c "gvmd --modify-setting 78eceaec-3385-11ea-b237-28d24461215b --value $ADMINUUID" gvm
+#
+# Fresh database detection:
+#  - no admin user at all: fresh empty DB (created locally or by the
+#    database container in the split setup), or a first boot that was
+#    interrupted before account setup ran
+#  - LOADDEFAULT=true: base DB restored from the image archives (the admin
+#    user exists with the image's default password)
+ADMIN_EXISTS=$(su -c "gvmd --get-users --verbose" gvm 2>/dev/null | awk '{print $1}' | grep -cx "admin" || true)
+if [ "$ADMIN_EXISTS" -eq 0 ]; then
+	# Fresh/empty database: create the initial admin account.
+	echo "No admin user found - creating initial admin account ($USERNAME)"
+	su -c "gvmd --role=\"Super Admin\" --create-user=\"$USERNAME\" --password=\"$PASSWORD\"" gvm
+	echo "admin user created"
+	ADMINUUID=$(su -c "gvmd --get-users --verbose | awk /$USERNAME/'{print \$2}' " gvm)
+	echo "admin user UUID is $ADMINUUID"
+	echo "Granting admin access to defaults"
+	su -c "gvmd --modify-setting 78eceaec-3385-11ea-b237-28d24461215b --value $ADMINUUID" gvm
+	if [ "$USERNAME" != "admin" ]; then
+		# Custom admin username: remove the default admin account if it exists.
+		su -c "gvmd --delete-user=admin" gvm 2>/dev/null || true
 	fi
+elif [ "$LOADDEFAULT" == "true" ] && [ "$USERNAME" == "admin" ] && [ "$PASSWORD" != "admin" ] ; then
+	# Base image database restored: admin exists with the image's default
+	# password - set it to the configured value (first install only).
+	echo "Setting admin password"
+	su -c "gvmd --user=\"$USERNAME\" --new-password=\"$PASSWORD\" " gvm
+elif [ "$LOADDEFAULT" == "true" ] && [ "$USERNAME" != "admin" ] ; then
+	# Base image database restored with a custom admin username.
+	echo "Creating new user $USERNAME with supplied password."
+	echo "If no password supplied on startup, then the default password is admin"
+	echo " ...... Don't do that ..... "
+	echo "Creating Greenbone Vulnerability Manager admin user as $USERNAME"
+	su -c "gvmd --role=\"Super Admin\" --create-user=\"$USERNAME\" --password=\"$PASSWORD\"" gvm
+	echo "admin user created"
+	ADMINUUID=$(su -c "gvmd --get-users --verbose | awk /$USERNAME/'{print \$2}' " gvm)
+	echo "admin user UUID is $ADMINUUID"
+	echo "Granting admin access to defaults"
+	su -c "gvmd --modify-setting 78eceaec-3385-11ea-b237-28d24461215b --value $ADMINUUID" gvm
+	# Now ... we need to remove the "admin" account ...
+	su -c "gvmd --delete-user=admin" gvm 2>/dev/null || true
 else
 	echo "Skipping admin password change (existing database - credentials preserved)"
 fi

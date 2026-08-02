@@ -1,81 +1,56 @@
+# Split-DB deployment: PostgreSQL runs in its own container, the rest of
+# the OpenVAS stack (redis, openvasd, ospd-openvas, gvmd, gsad) in the
+# openvas container.
+#
+# NOTE: the old 7-service split (gvmd/gsad/redis/openvas/notus/mosquitto
+# as separate containers) was removed - those service scripts are stale
+# for the current components (gsad 26.4.0 removed --mlisten, and ospd
+# now uses openvasd instead of the mosquitto MQTT architecture).
+#
+# Both containers share the "openvas" data volume and the "ovasrun" run
+# volume. PostgreSQL listens on the shared /run/postgresql socket, which
+# the openvas container connects to (SKIPPG=true makes single.sh skip
+# starting its own PostgreSQL and wait for the database container).
+#
+# Set TAG in .env, e.g. TAG="26.08.02.03"
 services:
   postgresql:
-    container_name: ovas_postgresql
+    container_name: openvas-postgresql
     image: mitexleo/openvas:${TAG}
     command: postgresql
-    #init: true
-    volumes:
-      - "openvas:/data"
-      - "ovasrun:/run"
-    restart: unless-stopped
-  mosquitto:
-    container_name: ovas_mosquitto
-    image: mitexleo/openvas:${TAG}
-    command: mosquitto
-    restart: unless-stopped
-    volumes:
-      - "openvas:/data"
-      - "ovasrun:/run"
-  notus:
-    container_name: ovas_notus
-    image: mitexleo/openvas:${TAG}
-    command: notus
-    restart: unless-stopped
-    volumes:
-      - "openvas:/data"
-      - "ovasrun:/run"
-    depends_on:
-      - "mosquitto"
-  gvmd:
-    container_name: ovas_gvmd
-    image: mitexleo/openvas:${TAG}
-    command: gvmd
-    depends_on:
-      - "postgresql"
-    volumes:
-      - "openvas:/data"
-      - "ovasrun:/run"
     environment:
-      - "RELAYHOST=$RELAYHOST"
-      - "SMTPPORT=$SMTPPORT"
-      - "QUIET=$QUIET" # dump feed sync noise to /dev/null
-      - "SKIPSYNC=$SKIPSYNC" # Skips the feed sync on startup.
-      - "GMP=$GMP" # to enable see docs
-    restart: unless-stopped
-  redis:
-    container_name: ovas_redis
-    image: mitexleo/openvas:${TAG}
-    command: redis
-    depends_on:
-      - "gvmd"
+      - "PGVER=15"
     volumes:
+      - "openvas:/data"
       - "ovasrun:/run"
     restart: unless-stopped
   openvas:
     container_name: openvas
     image: mitexleo/openvas:${TAG}
-    init: true
-    command: openvas
+    command: single
     depends_on:
-      - "redis"
+      - "postgresql"
+    environment:
+      - "SKIPPG=true" # database runs in the postgresql container
+      - "PASSWORD=admin"
+      - "USERNAME=admin"
+      - "RELAYHOST=172.17.0.1"
+      - "SMTPPORT=25"
+      - "REDISDBS=512"
+      - "QUIET=false" # dump feed sync noise to /dev/null
+      - "NEWDB=false" # only use this for creating a blank DB
+      - "SKIPSYNC=true" # Skips the feed sync on startup.
+      - "RESTORE=false"
+      - "DEBUG=false"
+      - "HTTPS=false" # whether to use HTTPS or not
+      - "GSATIMEOUT=15"
+      - "PGVER=15"
+    ports:
+      - "8080:9392"
     volumes:
       - "openvas:/data"
       - "ovasrun:/run"
     restart: unless-stopped
-  gsad:
-    container_name: ovas_gsad
-    image: mitexleo/openvas:${TAG}
-    command: gsad
-    depends_on:
-      - "gvmd"
-    environment:
-      - "HTTPS=$HTTPS" # wether to use HTTPS or not
-    ports:
-      - "8080:9392"
-    restart: unless-stopped
-  scannable:
-    image: mitexleo/scannable
-    container_name: ovas_scannable
 volumes:
   openvas:
   ovasrun:

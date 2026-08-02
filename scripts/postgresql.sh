@@ -54,11 +54,25 @@ fi
 
 PGFAIL=0
 PGUPFAIL=0
+# Clean up stale PostgreSQL lock files from previous unclean shutdowns.
+# pg_ctl otherwise refuses to start, and the container mistakes the failure
+# for a DB version mismatch and bails out ("keeps going down").
+if [ -f /data/database/postmaster.pid ]; then
+	PID=$(head -1 /data/database/postmaster.pid 2>/dev/null || echo 0)
+	if [ -n "$PID" ] && [ "$PID" != "0" ] && ! kill -0 "$PID" 2>/dev/null; then
+		echo "Removing stale PostgreSQL lock file (PID $PID not running)"
+		rm -f /data/database/postmaster.pid
+		rm -f /data/database/postmaster.opts
+	fi
+fi
 echo "Starting PostgreSQL..."
-su -c "/usr/lib/postgresql/${PGVER}/bin/pg_ctl -D /data/database start" postgres || PGFAIL=$?
+# -t 180: after an unclean shutdown (power/IO), PostgreSQL crash recovery can
+# take minutes. The default 60s timeout made pg_ctl report failure, which the
+# container then misread as a DB version mismatch, causing the container to exit.
+su -c "/usr/lib/postgresql/${PGVER}/bin/pg_ctl -D /data/database -t 180 start" postgres || PGFAIL=$?
 echo "pg exit with $PGFAIL ."
 if [ $PGFAIL -ne 0 ]; then
-        echo "It looks like postgres failed to start. ( Exit code: \"$?\" "
+        echo "It looks like postgres failed to start. ( Exit code: \"$PGFAIL\" "
         echo "Assuming this is due to different database version and starting upgrade."
         /scripts/db-upgrade.sh || PGUPFAIL=$?
         if [ $PGUPFAIL -ne 0 ]; then
@@ -79,7 +93,7 @@ echo "DB is $DB"
 ls -l /usr/lib/*.xz
 if [ "$DB" = "gvmd" ]; then
 	LOADDEFAULT="false"
-elif ! [ -f /usr/lib/gvmd.sql.xz ]; then
+elif ! [ -f /usr/lib/gvmd.sql.xz ] || [ $(stat -c%s /usr/lib/gvmd.sql.xz 2>/dev/null || echo 0) -lt 100 ]; then
 	LOADDEFAULT="false"
 else
 	LOADDEFAULT="true"
